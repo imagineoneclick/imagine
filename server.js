@@ -144,21 +144,18 @@ const ratio = req.body?.ratio || '';
   const dims = dimensionMap[ratio] ?? dimensionMap['1:1'];
 
   try {
-    const result = await fal.subscribe('fal-ai/flux/schnell', {
+    const result = await fal.subscribe('fal-ai/wan/v2.7/t2v', {
       input: {
         prompt: prompt.trim().slice(0, 800),
-        image_size: {
-          width: dims.width,
-          height: dims.height,
-        },
-        num_inference_steps: 4,
-        num_images: 1,
-        enable_safety_checker: true,
+        width: dims.width,
+height: dims.height,
+num_inference_steps: 30,
+guidance_scale: 7.5,
       },
       logs: false,
     });
 
-    const imageUrl = result?.images?.[0]?.url ?? result?.data?.images?.[0]?.url;
+    const imageUrl = result?.images?.[0]?.url ?? result?.data?.images?.[0]?.url ?? result?.video?.url ?? result?.data?.video?.url;
     if (!imageUrl) throw new Error('No image returned from fal.ai');
 
     const newCredits = payload.credits - 1;
