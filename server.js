@@ -125,7 +125,7 @@ app.post('/generate', async (req, res) => {
   }
 
   const prompt = req.body?.prompt || '';
-const ratio = req.body?.ratio || '';
+  const ratio = req.body?.ratio || '1:1';
 
   if (!prompt || prompt.trim().length < 1) {
     usedJtis.delete(payload.jti);
@@ -144,18 +144,21 @@ const ratio = req.body?.ratio || '';
   const dims = dimensionMap[ratio] ?? dimensionMap['1:1'];
 
   try {
-    const result = await fal.subscribe('fal-ai/wan/v2.7/t2v', {
+    const result = await fal.subscribe('fal-ai/flux/schnell', {
       input: {
         prompt: prompt.trim().slice(0, 800),
-        width: dims.width,
-height: dims.height,
-num_inference_steps: 30,
-guidance_scale: 7.5,
+        image_size: {
+          width: dims.width,
+          height: dims.height,
+        },
+        num_inference_steps: 4,
+        num_images: 1,
+        enable_safety_checker: false,
       },
       logs: false,
     });
 
-    const imageUrl = result?.images?.[0]?.url ?? result?.data?.images?.[0]?.url ?? result?.video?.url ?? result?.data?.video?.url;
+    const imageUrl = result?.images?.[0]?.url ?? result?.data?.images?.[0]?.url;
     if (!imageUrl) throw new Error('No image returned from fal.ai');
 
     const newCredits = payload.credits - 1;
