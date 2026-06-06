@@ -112,7 +112,6 @@ app.post('/generate', async (req, res) => {
       {
         prompt: prompt.trim().slice(0, 800),
         size: size,
-        thinking_mode: true,
         seed: -1,
       },
       {
