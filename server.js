@@ -72,6 +72,7 @@ app.post('/create-checkout', async (req, res) => {
       payment_method_types: ['card'],
       line_items: [{ price_data: { currency: 'usd', unit_amount: packData.amount, product_data: { name: `Imagine · ${packData.label}`, description: `${packData.credits} AI image generations` } }, quantity: 1 }],
       mode: 'payment',
+      automatic_currency_conversion: { enabled: true },
       success_url: `${frontendUrl}/?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${frontendUrl}/`,
       metadata: { pack, credits: String(packData.credits) },
