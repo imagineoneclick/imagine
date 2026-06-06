@@ -5,9 +5,18 @@ const Stripe  = require('stripe');
 const jwt     = require('jsonwebtoken');
 const crypto  = require('crypto');
 const axios   = require('axios');
+const multer  = require('multer');
+const { v2: cloudinary } = require('cloudinary');
 
 const app    = express();
 const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
+const upload = multer({ storage: multer.memoryStorage() });
+
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key:    process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
+});
 
 app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
 app.use('/webhook', express.raw({ type: 'application/json' }));
@@ -81,7 +90,21 @@ app.get('/confirm-purchase', async (req, res) => {
   }
 });
 
-app.post('/generate', async (req, res) => {
+// Upload reference images to Cloudinary and return URLs
+async function uploadToCloudinary(buffer, mimetype) {
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: 'imagine-refs', resource_type: 'image' },
+      (error, result) => {
+        if (error) reject(error);
+        else resolve(result.secure_url);
+      }
+    );
+    stream.end(buffer);
+  });
+}
+
+app.post('/generate', upload.any(), async (req, res) => {
   let payload;
   try { payload = verifyAndConsume(req.headers.authorization); }
   catch (err) { return res.status(401).json({ error: err.message }); }
@@ -106,14 +129,28 @@ app.post('/generate', async (req, res) => {
   const size = sizeMap[ratio] ?? '1024*1024';
 
   try {
-    // Step 1: Submit the generation task
+    // Upload any reference images to Cloudinary
+    let refImageUrls = [];
+    if (req.files && req.files.length > 0) {
+      const uploads = req.files.map(f => uploadToCloudinary(f.buffer, f.mimetype));
+      refImageUrls = await Promise.all(uploads);
+    }
+
+    // Build WaveSpeed request
+    const requestBody = {
+      prompt: prompt.trim().slice(0, 800),
+      size: size,
+      seed: -1,
+    };
+
+    // Add reference image if provided
+    if (refImageUrls.length > 0) {
+      requestBody.image = refImageUrls[0]; // WaveSpeed uses first image as reference
+    }
+
     const submitRes = await axios.post(
       'https://api.wavespeed.ai/api/v3/alibaba/wan-2.7/text-to-image',
-      {
-        prompt: prompt.trim().slice(0, 800),
-        size: size,
-        seed: -1,
-      },
+      requestBody,
       {
         headers: {
           'Content-Type': 'application/json',
@@ -125,10 +162,10 @@ app.post('/generate', async (req, res) => {
     const predictionId = submitRes.data?.data?.id;
     if (!predictionId) throw new Error('No prediction ID returned');
 
-    // Step 2: Poll for the result
+    // Poll for result
     let imageUrl = null;
     for (let i = 0; i < 60; i++) {
-      await new Promise(r => setTimeout(r, 3000)); // wait 3 seconds
+      await new Promise(r => setTimeout(r, 3000));
       const pollRes = await axios.get(
         `https://api.wavespeed.ai/api/v3/predictions/${predictionId}/result`,
         { headers: { 'Authorization': `Bearer ${process.env.WAVESPEED_API_KEY}` } }
@@ -154,6 +191,11 @@ app.post('/generate', async (req, res) => {
   }
 });
 
+app.get('/dev-credits', (req, res) => {
+  const { token } = issueToken(10);
+  res.json({ token, credits: 10 });
+});
+
 app.post('/webhook', (req, res) => {
   const sig = req.headers['stripe-signature'];
   let event;
@@ -165,9 +207,6 @@ app.post('/webhook', (req, res) => {
   }
   res.json({ received: true });
 });
-app.get('/dev-credits', (req, res) => {
-  const { token } = issueToken(10);
-  res.json({ token, credits: 10 });
-});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`imagine-backend running on port ${PORT}`));
