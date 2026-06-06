@@ -1,16 +1,3 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// imagine-backend / server.js
-//
-// Credit system: Stripe sells credit packs → backend issues a signed JWT
-// containing the credit balance → stored in the user's localStorage.
-// Each /generate call verifies + decrements the token server-side.
-//
-// SETUP:
-//   1. npm install
-//   2. cp .env.example .env  →  fill in your keys
-//   3. node server.js
-// ─────────────────────────────────────────────────────────────────────────────
-
 require('dotenv').config();
 const express  = require('express');
 const cors     = require('cors');
@@ -24,23 +11,16 @@ const stripe = Stripe(process.env.STRIPE_SECRET_KEY);
 
 fal.config({ credentials: process.env.FAL_API_KEY });
 
-// ── Middleware ────────────────────────────────────────────────────────────────
 app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
 app.use('/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
-// ── Credit packs config ───────────────────────────────────────────────────────
 const PACKS = {
   starter:  { credits: 5,  amount: 499,  label: '5 images' },
   standard: { credits: 20, amount: 1499, label: '20 images' },
   pro:      { credits: 50, amount: 2999, label: '50 images' },
 };
 
-// ── JWT helpers ───────────────────────────────────────────────────────────────
-// Each token contains: { credits, jti } where jti is a unique ID per token
-// so each token can only be used once (replay protection).
-// In production you'd want a small DB (Redis/Postgres) to store used JTIs.
-// For simplicity here we use a short expiry + in-memory set.
 const usedJtis = new Set();
 
 function issueToken(credits) {
@@ -64,11 +44,10 @@ function verifyAndConsume(authHeader) {
   }
   if (usedJtis.has(payload.jti)) throw new Error('Token already used.');
   if (payload.credits < 1) throw new Error('No credits remaining.');
-  usedJtis.add(payload.jti); // consume this token
+  usedJtis.add(payload.jti);
   return payload;
 }
 
-// ── GET /credits — return current credit count ────────────────────────────────
 app.get('/credits', (req, res) => {
   try {
     if (!req.headers.authorization?.startsWith('Bearer ')) {
@@ -82,7 +61,6 @@ app.get('/credits', (req, res) => {
   }
 });
 
-// ── POST /create-checkout — create a Stripe Checkout session ──────────────────
 app.post('/create-checkout', async (req, res) => {
   const { pack } = req.body;
   const packData = PACKS[pack];
@@ -99,7 +77,7 @@ app.post('/create-checkout', async (req, res) => {
           unit_amount: packData.amount,
           product_data: {
             name: `Imagine · ${packData.label}`,
-            description: `${packData.credits} AI image generations · Powered by Wan 2.7`,
+            description: `${packData.credits} AI image generations · Powered by fal.ai`,
           },
         },
         quantity: 1,
@@ -117,8 +95,6 @@ app.post('/create-checkout', async (req, res) => {
   }
 });
 
-// ── GET /confirm-purchase?session_id=... ─────────────────────────────────────
-// Called after Stripe redirects back. Verifies payment and issues a credit token.
 app.get('/confirm-purchase', async (req, res) => {
   const { session_id } = req.query;
   if (!session_id) return res.status(400).json({ error: 'Missing session_id.' });
@@ -130,8 +106,6 @@ app.get('/confirm-purchase', async (req, res) => {
       return res.status(402).json({ error: 'Payment not completed.' });
     }
 
-    // Check this session hasn't already been redeemed
-    // (store redeemed sessions in a real DB in production)
     const credits = parseInt(session.metadata.credits, 10);
     const { token } = issueToken(credits);
 
@@ -142,7 +116,6 @@ app.get('/confirm-purchase', async (req, res) => {
   }
 });
 
-// ── POST /generate — deduct 1 credit and generate the image ──────────────────
 app.post('/generate', async (req, res) => {
   let payload;
   try {
@@ -152,10 +125,10 @@ app.post('/generate', async (req, res) => {
   }
 
   const { prompt, ratio } = req.body;
-  if (!prompt || prompt.trim().length < 3) {
-    // Refund the JTI since we didn't actually generate
+
+  if (!prompt || prompt.trim().length < 1) {
     usedJtis.delete(payload.jti);
-    return res.status(400).json({ error: 'Prompt is too short.' });
+    return res.status(400).json({ error: 'Please enter a prompt.' });
   }
 
   const dimensionMap = {
@@ -163,24 +136,30 @@ app.post('/generate', async (req, res) => {
     '16:9': { width: 1280, height: 720  },
     '9:16': { width: 720,  height: 1280 },
     '4:3':  { width: 1024, height: 768  },
+    '3:4':  { width: 768,  height: 1024 },
+    '3:2':  { width: 1216, height: 832  },
+    '2:3':  { width: 832,  height: 1216 },
   };
   const dims = dimensionMap[ratio] ?? dimensionMap['1:1'];
 
   try {
-    const result = await fal.subscribe('fal-ai/wan/v2.7/t2v', {
+    const result = await fal.subscribe('fal-ai/flux/schnell', {
       input: {
-        prompt: prompt.slice(0, 800),
-        ...dims,
-        num_inference_steps: 30,
-        guidance_scale: 7.5,
+        prompt: prompt.trim().slice(0, 800),
+        image_size: {
+          width: dims.width,
+          height: dims.height,
+        },
+        num_inference_steps: 4,
+        num_images: 1,
+        enable_safety_checker: true,
       },
       logs: false,
     });
 
-    const imageUrl = result?.images?.[0]?.url;
+    const imageUrl = result?.images?.[0]?.url ?? result?.data?.images?.[0]?.url;
     if (!imageUrl) throw new Error('No image returned from fal.ai');
 
-    // Issue a new token with credits - 1
     const newCredits = payload.credits - 1;
     const { token: newToken } = issueToken(newCredits);
 
@@ -188,13 +167,11 @@ app.post('/generate', async (req, res) => {
 
   } catch (err) {
     console.error('Generation error:', err.message);
-    // Refund the JTI since generation failed
     usedJtis.delete(payload.jti);
     res.status(500).json({ error: 'Image generation failed: ' + err.message });
   }
 });
 
-// ── Stripe webhook (optional but recommended for edge cases) ──────────────────
 app.post('/webhook', (req, res) => {
   const sig    = req.headers['stripe-signature'];
   const secret = process.env.STRIPE_WEBHOOK_SECRET;
@@ -206,11 +183,10 @@ app.post('/webhook', (req, res) => {
   }
   if (event.type === 'checkout.session.completed') {
     const s = event.data.object;
-    console.log(`✓ Payment $${s.amount_total / 100} · pack: ${s.metadata.pack} · ${s.metadata.credits} credits`);
+    console.log(`Payment confirmed · pack: ${s.metadata.pack} · ${s.metadata.credits} credits`);
   }
   res.json({ received: true });
 });
 
-// ── Start ─────────────────────────────────────────────────────────────────────
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 imagine-backend on http://localhost:${PORT}`));
+app.listen(PORT, () => console.log(`imagine-backend running on port ${PORT}`));
