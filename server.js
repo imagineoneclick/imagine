@@ -144,16 +144,14 @@ app.post('/generate', async (req, res) => {
   const dims = dimensionMap[ratio] ?? dimensionMap['1:1'];
 
   try {
-    const result = await fal.subscribe('fal-ai/flux/schnell', {
+    const result = await fal.subscribe('fal-ai/wan/v2.1/t2i', {
       input: {
         prompt: prompt.trim().slice(0, 800),
-        image_size: {
-          width: dims.width,
-          height: dims.height,
-        },
-        num_inference_steps: 4,
-        num_images: 1,
-        enable_safety_checker: false,
+        width: dims.width,
+height: dims.height,
+num_inference_steps: 30,
+guidance_scale: 7.5,
+negative_prompt: "low quality, blurry",
       },
       logs: false,
     });
