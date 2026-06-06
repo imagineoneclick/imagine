@@ -166,6 +166,9 @@ app.post('/webhook', (req, res) => {
   }
   res.json({ received: true });
 });
-
+app.get('/dev-credits', (req, res) => {
+  const { token } = issueToken(10);
+  res.json({ token, credits: 10 });
+});
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`imagine-backend running on port ${PORT}`));
