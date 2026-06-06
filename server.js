@@ -90,7 +90,6 @@ app.get('/confirm-purchase', async (req, res) => {
   }
 });
 
-// Upload reference images to Cloudinary and return URLs
 async function uploadToCloudinary(buffer, mimetype) {
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
@@ -129,40 +128,42 @@ app.post('/generate', upload.any(), async (req, res) => {
   const size = sizeMap[ratio] ?? '1024*1024';
 
   try {
-    // Upload any reference images to Cloudinary
     let refImageUrls = [];
     if (req.files && req.files.length > 0) {
       const uploads = req.files.map(f => uploadToCloudinary(f.buffer, f.mimetype));
       refImageUrls = await Promise.all(uploads);
     }
 
-    // Build WaveSpeed request
-    const requestBody = {
-      prompt: prompt.trim().slice(0, 800),
-      size: size,
-      seed: -1,
-    };
+    // Use image-edit model if reference images provided, otherwise text-to-image
+    let endpoint, requestBody;
 
-    // Add reference image if provided
     if (refImageUrls.length > 0) {
-      requestBody.image = refImageUrls[0]; // WaveSpeed uses first image as reference
+      endpoint = 'https://api.wavespeed.ai/api/v3/alibaba/wan-2.7/image-edit';
+      requestBody = {
+        prompt: prompt.trim().slice(0, 800),
+        images: refImageUrls.slice(0, 3),
+        size: size,
+        seed: -1,
+      };
+    } else {
+      endpoint = 'https://api.wavespeed.ai/api/v3/alibaba/wan-2.7/text-to-image';
+      requestBody = {
+        prompt: prompt.trim().slice(0, 800),
+        size: size,
+        seed: -1,
+      };
     }
 
-    const submitRes = await axios.post(
-      'https://api.wavespeed.ai/api/v3/alibaba/wan-2.7/text-to-image',
-      requestBody,
-      {
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${process.env.WAVESPEED_API_KEY}`,
-        },
-      }
-    );
+    const submitRes = await axios.post(endpoint, requestBody, {
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${process.env.WAVESPEED_API_KEY}`,
+      },
+    });
 
     const predictionId = submitRes.data?.data?.id;
     if (!predictionId) throw new Error('No prediction ID returned');
 
-    // Poll for result
     let imageUrl = null;
     for (let i = 0; i < 60; i++) {
       await new Promise(r => setTimeout(r, 3000));
