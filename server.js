@@ -124,7 +124,8 @@ app.post('/generate', async (req, res) => {
     return res.status(401).json({ error: err.message });
   }
 
-  const { prompt, ratio } = req.body;
+  const prompt = req.body?.prompt || '';
+const ratio = req.body?.ratio || '';
 
   if (!prompt || prompt.trim().length < 1) {
     usedJtis.delete(payload.jti);
