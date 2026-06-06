@@ -18,7 +18,13 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-app.use(cors({ origin: process.env.FRONTEND_URL || '*' }));
+app.use(cors({ 
+  origin: [
+    'https://imagineoneclick.com',
+    'https://www.imagineoneclick.com',
+    'https://sage-hummingbird-722846.netlify.app'
+  ] 
+}));
 app.use('/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
