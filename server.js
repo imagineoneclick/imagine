@@ -231,7 +231,8 @@ app.post('/create-crypto-payment', async (req, res) => {
       {
         price_amount: selected.amount,
         price_currency: 'usd',
-        order_id: `${pack}-${Date.now()}`,
+        pay_currency: 'btc',
+order_id: `${pack}-${Date.now()}`,
         order_description: `Imagine - ${selected.name}`,
         ipn_callback_url: `https://imagine-production-5857.up.railway.app/crypto-webhook`,
         success_url: `https://imagineoneclick.com/?crypto_pack=${pack}`,
