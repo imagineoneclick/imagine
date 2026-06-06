@@ -214,6 +214,80 @@ app.post('/webhook', (req, res) => {
   }
   res.json({ received: true });
 });
+// Create NOWPayments crypto payment
+app.post('/create-crypto-payment', async (req, res) => {
+  const { pack } = req.body;
+  const packages = {
+    starter:  { credits: 5,  amount: 4.99,  name: '5 Credits' },
+    standard: { credits: 20, amount: 14.99, name: '20 Credits' },
+    pro:      { credits: 50, amount: 29.99, name: '50 Credits' },
+  };
+  const selected = packages[pack];
+  if (!selected) return res.status(400).json({ error: 'Invalid pack.' });
+
+  try {
+    const response = await axios.post(
+      'https://api.nowpayments.io/v1/payment',
+      {
+        price_amount: selected.amount,
+        price_currency: 'usd',
+        pay_currency: 'usdteth',
+        order_id: `${pack}-${Date.now()}`,
+        order_description: `Imagine - ${selected.name}`,
+        ipn_callback_url: `https://imagine-production-5857.up.railway.app/crypto-webhook`,
+        success_url: `https://imagineoneclick.com/?crypto_pack=${pack}`,
+        cancel_url: `https://imagineoneclick.com/`,
+      },
+      {
+        headers: {
+          'x-api-key': process.env.NOWPAYMENTS_API_KEY,
+          'Content-Type': 'application/json',
+        },
+      }
+    );
+    res.json({ paymentUrl: `https://nowpayments.io/payment/?iid=${response.data.payment_id}`, paymentId: response.data.payment_id });
+  } catch (err) {
+    console.error('NOWPayments error:', err.response?.data || err.message);
+    res.status(500).json({ error: 'Could not create crypto payment.' });
+  }
+});
+
+// NOWPayments webhook
+app.post('/crypto-webhook', async (req, res) => {
+  const { payment_status, order_id } = req.body;
+  if (payment_status === 'finished' || payment_status === 'confirmed') {
+    console.log(`Crypto payment confirmed: ${order_id}`);
+  }
+  res.status(200).send('OK');
+});
+
+// Verify crypto payment and issue credits
+app.get('/verify-crypto', async (req, res) => {
+  const { payment_id, pack } = req.query;
+  const packages = {
+    starter:  { credits: 5  },
+    standard: { credits: 20 },
+    pro:      { credits: 50 },
+  };
+  const selected = packages[pack];
+  if (!selected || !payment_id) return res.status(400).json({ error: 'Invalid request.' });
+
+  try {
+    const response = await axios.get(
+      `https://api.nowpayments.io/v1/payment/${payment_id}`,
+      { headers: { 'x-api-key': process.env.NOWPAYMENTS_API_KEY } }
+    );
+    const status = response.data.payment_status;
+    if (status === 'finished' || status === 'confirmed' || status === 'sending') {
+      const { token } = issueToken(selected.credits);
+      res.json({ token, credits: selected.credits });
+    } else {
+      res.status(402).json({ error: 'Payment not confirmed yet. Status: ' + status });
+    }
+  } catch (err) {
+    res.status(500).json({ error: 'Could not verify payment.' });
+  }
+});
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`imagine-backend running on port ${PORT}`));
