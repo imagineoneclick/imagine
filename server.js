@@ -227,16 +227,15 @@ app.post('/create-crypto-payment', async (req, res) => {
 
   try {
     const response = await axios.post(
-      'https://api.nowpayments.io/v1/payment',
+      'https://api.nowpayments.io/v1/invoice',,
       {
         price_amount: selected.amount,
         price_currency: 'usd',
-        pay_currency: 'btc',
-order_id: `${pack}-${Date.now()}`,
-        order_description: `Imagine - ${selected.name}`,
-        ipn_callback_url: `https://imagine-production-5857.up.railway.app/crypto-webhook`,
-        success_url: `https://imagineoneclick.com/?crypto_pack=${pack}`,
-        cancel_url: `https://imagineoneclick.com/`,
+        order_id: `${pack}-${Date.now()}`,
+order_description: `Imagine - ${selected.name}`,
+ipn_callback_url: `https://imagine-production-5857.up.railway.app/crypto-webhook`,
+success_url: `https://imagineoneclick.com/?crypto_pack=${pack}`,
+cancel_url: `https://imagineoneclick.com/`,
       },
       {
         headers: {
@@ -245,7 +244,7 @@ order_id: `${pack}-${Date.now()}`,
         },
       }
     );
-    res.json({ paymentUrl: `https://nowpayments.io/payment/?iid=${response.data.payment_id}`, paymentId: response.data.payment_id });
+    res.json({ paymentUrl: response.data.invoice_url, paymentId: response.data.id });
   } catch (err) {
     console.error('NOWPayments error:', err.response?.data || err.message);
     res.status(500).json({ error: 'Could not create crypto payment.' });
