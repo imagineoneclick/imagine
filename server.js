@@ -227,7 +227,7 @@ app.post('/create-crypto-payment', async (req, res) => {
 
   try {
     const response = await axios.post(
-      'https://api.nowpayments.io/v1/invoice',,
+      'https://api.nowpayments.io/v1/invoice',
       {
         price_amount: selected.amount,
         price_currency: 'usd',
