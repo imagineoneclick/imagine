@@ -1067,7 +1067,7 @@ async function handleGenerateVideo() {
 
     // Poll until the job reaches a terminal state (~8 min ceiling).
     const started = Date.now();
-    for (let i = 0; i < 200; i++) {
+    for (let i = 0; i < 440; i++) {   // ~22 min, just past the backend's ceiling
       await new Promise(res => setTimeout(res, 3000));
       const jr = await fetch(`${BACKEND}/video-job/${jobId}`);
       const job = await jr.json();
