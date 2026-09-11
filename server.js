@@ -96,17 +96,32 @@ app.get('/confirm-purchase', async (req, res) => {
   }
 });
 
-async function uploadToCloudinary(buffer, mimetype) {
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder: 'imagine-refs', resource_type: 'image' },
-      (error, result) => {
-        if (error) reject(error);
-        else resolve(result.secure_url);
-      }
-    );
-    stream.end(buffer);
+// Uploads straight to WaveSpeed's own storage using the key we already have.
+// Two steps: ask for a signed URL, then PUT the bytes to it. Max 200 MiB,
+// files kept 7 days — plenty, since references only need to outlive the job.
+// (Cloudinary is no longer used for this. Its config above is left in place
+// in case you want it back; delete it whenever you like.)
+async function uploadToWaveSpeed(buffer, filename, contentType) {
+  const init = await axios.post(
+    'https://api.wavespeed.ai/api/v3/media/uploads',
+    { filename: filename || 'upload.bin', size: buffer.length, content_type: contentType },
+    { headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.WAVESPEED_API_KEY}`,
+    } }
+  );
+
+  const data = init.data?.data;
+  const put = data?.upload;
+  if (!put?.url || !data?.download_url) throw new Error('Could not start upload to WaveSpeed');
+
+  await axios.put(put.url, buffer, {
+    headers: put.headers || { 'Content-Type': contentType },
+    maxBodyLength: Infinity,
+    maxContentLength: Infinity,
   });
+
+  return data.download_url;
 }
 
 app.post('/generate', upload.any(), async (req, res) => {
@@ -136,7 +151,7 @@ app.post('/generate', upload.any(), async (req, res) => {
   try {
     let refImageUrls = [];
     if (req.files && req.files.length > 0) {
-      const uploads = req.files.map(f => uploadToCloudinary(f.buffer, f.mimetype));
+      const uploads = req.files.map(f => uploadToWaveSpeed(f.buffer, f.originalname, f.mimetype));
       refImageUrls = await Promise.all(uploads);
     }
 
@@ -231,17 +246,6 @@ function verifyAndConsumeFor(authHeader, cost) {
   return payload;
 }
 
-async function uploadMedia(buffer, kind) {
-  // Cloudinary stores audio under resource_type 'video'
-  const resource_type = kind === 'image' ? 'image' : 'video';
-  return new Promise((resolve, reject) => {
-    const stream = cloudinary.uploader.upload_stream(
-      { folder: 'imagine-video-refs', resource_type },
-      (error, result) => (error ? reject(error) : resolve(result.secure_url))
-    );
-    stream.end(buffer);
-  });
-}
 
 function failVideoJob(jobId, message) {
   const job = videoJobs.get(jobId);
@@ -261,11 +265,13 @@ async function runVideoJob(jobId, files) {
   job.status = 'uploading';
   const ofKind = (prefix) => files.filter(f => f.fieldname.startsWith(prefix));
 
+  const send = (f) => uploadToWaveSpeed(f.buffer, f.originalname, f.mimetype);
   const [images, videos, audios] = await Promise.all([
-    Promise.all(ofKind('img_').map(f => uploadMedia(f.buffer, 'image'))),
-    Promise.all(ofKind('vid_').map(f => uploadMedia(f.buffer, 'video'))),
-    Promise.all(ofKind('aud_').map(f => uploadMedia(f.buffer, 'audio'))),
+    Promise.all(ofKind('img_').map(send)),
+    Promise.all(ofKind('vid_').map(send)),
+    Promise.all(ofKind('aud_').map(send)),
   ]);
+  console.log(`Video job ${job.id} uploaded ${images.length} img / ${videos.length} vid / ${audios.length} aud`);
 
   const body = {
     prompt: job.prompt.slice(0, 800),
