@@ -198,6 +198,183 @@ app.post('/generate', upload.any(), async (req, res) => {
   }
 });
 
+// ============================================================
+// VIDEO — Wan 3.0 reference-to-video
+// Async: the HTTP request returns a jobId immediately and the
+// poll runs in the background, because Wan takes 1–4 minutes
+// and Railway will cut a request held open that long.
+//
+// PROTOTYPE: videoJobs lives in memory and is lost on redeploy.
+// Move it to Postgres before launch.
+// ============================================================
+
+const videoUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024, files: 20 },
+});
+
+const VIDEO_CREDITS_PER_SECOND = { '720p': 1, '1080p': 2 };
+const videoJobs = new Map();
+
+function videoCost(resolution, duration) {
+  return Math.ceil(duration * (VIDEO_CREDITS_PER_SECOND[resolution] || 1));
+}
+
+function verifyAndConsumeFor(authHeader, cost) {
+  if (!authHeader?.startsWith('Bearer ')) throw new Error('No token provided.');
+  let payload;
+  try { payload = jwt.verify(authHeader.slice(7), process.env.JWT_SECRET); }
+  catch { throw new Error('Invalid or expired token.'); }
+  if (usedJtis.has(payload.jti)) throw new Error('Token already used.');
+  if (payload.credits < cost) throw new Error(`Not enough credits — this costs ${cost}.`);
+  usedJtis.add(payload.jti);
+  return payload;
+}
+
+async function uploadMedia(buffer, kind) {
+  // Cloudinary stores audio under resource_type 'video'
+  const resource_type = kind === 'image' ? 'image' : 'video';
+  return new Promise((resolve, reject) => {
+    const stream = cloudinary.uploader.upload_stream(
+      { folder: 'imagine-video-refs', resource_type },
+      (error, result) => (error ? reject(error) : resolve(result.secure_url))
+    );
+    stream.end(buffer);
+  });
+}
+
+function failVideoJob(jobId, message) {
+  const job = videoJobs.get(jobId);
+  if (!job || job.status === 'completed') return;
+  console.error(`Video job ${jobId} failed:`, message);
+  job.status = 'failed';
+  job.error = message;
+  // Refund: burn the deducted token, mint one with the credits put back.
+  usedJtis.add(job.newJti);
+  job.refundToken = issueToken(job.creditsAfter + job.cost).token;
+}
+
+async function runVideoJob(jobId, files) {
+  const job = videoJobs.get(jobId);
+  if (!job) return;
+
+  job.status = 'uploading';
+  const ofKind = (prefix) => files.filter(f => f.fieldname.startsWith(prefix));
+
+  const [images, videos, audios] = await Promise.all([
+    Promise.all(ofKind('img_').map(f => uploadMedia(f.buffer, 'image'))),
+    Promise.all(ofKind('vid_').map(f => uploadMedia(f.buffer, 'video'))),
+    Promise.all(ofKind('aud_').map(f => uploadMedia(f.buffer, 'audio'))),
+  ]);
+
+  const body = {
+    prompt: job.prompt.slice(0, 800),
+    resolution: job.resolution,
+    aspect_ratio: job.aspect,
+    duration: job.duration,
+    enable_audio: true,
+    enable_prompt_expansion: true,
+  };
+  if (images.length) body.reference_images = images.slice(0, 10);
+  if (videos.length) body.reference_videos = videos.slice(0, 5);
+  if (audios.length) body.reference_audios = audios.slice(0, 5);
+
+  const submitRes = await axios.post(
+    'https://api.wavespeed.ai/api/v3/alibaba/wan-3.0/reference-to-video',
+    body,
+    { headers: {
+      'Content-Type': 'application/json',
+      'Authorization': `Bearer ${process.env.WAVESPEED_API_KEY}`,
+    } }
+  );
+
+  const predictionId = submitRes.data?.data?.id;
+  if (!predictionId) throw new Error('No prediction ID returned');
+
+  job.status = 'processing';
+  job.predictionId = predictionId;
+
+  for (let i = 0; i < 160; i++) {           // ~8 minutes at 3s
+    await new Promise(r => setTimeout(r, 3000));
+    const pollRes = await axios.get(
+      `https://api.wavespeed.ai/api/v3/predictions/${predictionId}/result`,
+      { headers: { 'Authorization': `Bearer ${process.env.WAVESPEED_API_KEY}` } }
+    );
+    const status = pollRes.data?.data?.status;
+    if (status === 'completed') {
+      job.videoUrl = pollRes.data?.data?.outputs?.[0];
+      if (!job.videoUrl) throw new Error('Completed with no output URL');
+      job.status = 'completed';
+      return;
+    }
+    if (['failed', 'cancelled', 'timeout', 'deleted'].includes(status)) {
+      throw new Error(`Generation ${status} on WaveSpeed`);
+    }
+  }
+  throw new Error('Video generation timed out');
+}
+
+app.post('/generate-video', videoUpload.any(), async (req, res) => {
+  const prompt     = (req.body?.prompt || '').trim();
+  const aspect     = req.body?.aspect_ratio || '16:9';
+  const resolution = ['720p', '1080p'].includes(req.body?.resolution) ? req.body.resolution : '720p';
+
+  // Wan 3.0's minimum is 2s — the UI offers 1s, so floor it here.
+  let duration = parseInt(req.body?.duration, 10) || 5;
+  duration = Math.min(15, Math.max(2, duration));
+
+  const cost = videoCost(resolution, duration);
+
+  let payload;
+  try { payload = verifyAndConsumeFor(req.headers.authorization, cost); }
+  catch (err) { return res.status(401).json({ error: err.message }); }
+
+  if (!prompt) {
+    usedJtis.delete(payload.jti);
+    return res.status(400).json({ error: 'Please enter a prompt.' });
+  }
+  if (!req.files?.length) {
+    usedJtis.delete(payload.jti);
+    return res.status(400).json({ error: 'Add at least one reference.' });
+  }
+
+  const creditsAfter = payload.credits - cost;
+  const { token: newToken } = issueToken(creditsAfter);
+
+  const jobId = crypto.randomUUID();
+  videoJobs.set(jobId, {
+    id: jobId, status: 'created', prompt, duration, aspect, resolution,
+    cost, creditsAfter, newJti: jwt.decode(newToken).jti,
+    videoUrl: null, error: null, refundToken: null, createdAt: Date.now(),
+  });
+
+  // Hand the client its jobId and deducted token now; work continues after.
+  res.json({ jobId, newToken, credits: creditsAfter, cost });
+
+  runVideoJob(jobId, req.files).catch(err => failVideoJob(jobId, err.message));
+});
+
+app.get('/video-job/:id', (req, res) => {
+  const job = videoJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Job not found.' });
+  res.json({
+    id: job.id,
+    status: job.status,
+    videoUrl: job.videoUrl,
+    error: job.error,
+    refundToken: job.refundToken,
+    credits: job.status === 'failed' ? job.creditsAfter + job.cost : job.creditsAfter,
+  });
+});
+
+// Drop finished jobs after an hour so the Map doesn't grow forever.
+setInterval(() => {
+  const cutoff = Date.now() - 60 * 60 * 1000;
+  for (const [id, job] of videoJobs) {
+    if (job.createdAt < cutoff) videoJobs.delete(id);
+  }
+}, 10 * 60 * 1000);
+
 app.get('/dev-credits', (req, res) => {
   const { token } = issueToken(10);
   res.json({ token, credits: 10 });
