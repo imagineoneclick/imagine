@@ -28,10 +28,13 @@ app.use(cors({
 app.use('/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
+// Priced in MXN because that's this account's only settlement currency —
+// which is also what lets Stripe's Adaptive Pricing show foreign customers
+// their own currency. Amounts are in centavos.
 const PACKS = {
-  starter:  { credits: 5,  amount: 499,  label: '5 images' },
-  standard: { credits: 20, amount: 1499, label: '20 images' },
-  pro:      { credits: 50, amount: 2999, label: '50 images' },
+  starter:  { credits: 5,  amount: 9900,  label: '5 credits' },
+  standard: { credits: 20, amount: 29900, label: '20 credits' },
+  pro:      { credits: 50, amount: 59900, label: '50 credits' },
 };
 
 const usedJtis = new Set();
@@ -70,7 +73,7 @@ app.post('/create-checkout', async (req, res) => {
   try {
     const session = await stripe.checkout.sessions.create({
       payment_method_types: ['card'],
-      line_items: [{ price_data: { currency: 'usd', unit_amount: packData.amount, product_data: { name: `Imagine · ${packData.label}`, description: `${packData.credits} AI image generations` } }, quantity: 1 }],
+      line_items: [{ price_data: { currency: 'mxn', unit_amount: packData.amount, product_data: { name: `Imagine · ${packData.label}`, description: `${packData.credits} credits for images and video` } }, quantity: 1 }],
       mode: 'payment',
       success_url: `${frontendUrl}/?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${frontendUrl}/`,
@@ -449,9 +452,9 @@ app.post('/webhook', (req, res) => {
 app.post('/create-crypto-payment', async (req, res) => {
   const { pack } = req.body;
   const packages = {
-    starter:  { credits: 5,  amount: 4.99,  name: '5 Credits' },
-    standard: { credits: 20, amount: 14.99, name: '20 Credits' },
-    pro:      { credits: 50, amount: 29.99, name: '50 Credits' },
+    starter:  { credits: 5,  amount: 99,  name: '5 Credits' },
+    standard: { credits: 20, amount: 299, name: '20 Credits' },
+    pro:      { credits: 50, amount: 599, name: '50 Credits' },
   };
   const selected = packages[pack];
   if (!selected) return res.status(400).json({ error: 'Invalid pack.' });
@@ -461,7 +464,7 @@ app.post('/create-crypto-payment', async (req, res) => {
       'https://api.nowpayments.io/v1/invoice',
       {
         price_amount: selected.amount,
-        price_currency: 'usd',
+        price_currency: 'mxn',
         order_id: `${pack}-${Date.now()}`,
 order_description: `Imagine - ${selected.name}`,
 ipn_callback_url: `https://imagine-production-5857.up.railway.app/crypto-webhook`,
