@@ -406,6 +406,60 @@
       .right-panel { display: none; }
       body { overflow: auto; }
     }
+    /* ---- video mode ---- */
+
+    .mode-switch {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 0.35rem;
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: var(--rl);
+      padding: 0.3rem;
+    }
+    .mode-btn {
+      display: flex; align-items: center; justify-content: center; gap: 0.45rem;
+      padding: 0.6rem 0.4rem;
+      background: transparent;
+      border: 1px solid transparent; border-radius: var(--r);
+      color: var(--muted);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.85rem; font-weight: 500;
+      cursor: pointer;
+      transition: color 0.2s, background 0.2s, border-color 0.2s;
+    }
+    .mode-btn:hover { color: var(--text); }
+    .mode-btn.active {
+      background: var(--purple-dim);
+      border-color: var(--purple);
+      color: var(--purple-bright);
+      font-weight: 600;
+    }
+
+    .add-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; }
+    .add-row .ref-upload { margin: 0; }
+
+    .prompt-hint {
+      font-size: 0.75rem; color: var(--muted);
+      margin-top: 0.5rem; line-height: 1.5;
+    }
+    .prompt-hint b { color: var(--purple-bright); font-weight: 500; }
+
+    .ref-thumb-wrap video { width: 100%; height: 100%; object-fit: cover; }
+    .ref-badge {
+      position: absolute; left: 3px; bottom: 3px;
+      background: rgba(0,0,0,0.75);
+      color: var(--text);
+      font-size: 0.6rem; font-weight: 500;
+      padding: 1px 5px; border-radius: 3px;
+      pointer-events: none;
+    }
+    .ref-issue { font-size: 0.72rem; color: #e4645c; margin-top: 0.4rem; }
+
+    .gen-card video { width: 100%; display: block; background: #000; }
+    .video-progress {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 0.6rem; aspect-ratio: 16/9; background: var(--card);
+      color: var(--muted); font-size: 0.8rem;
+    }
   </style>
 </head>
 <body>
@@ -425,6 +479,17 @@
 
   <div class="left-panel">
 
+    <div class="mode-switch">
+      <button class="mode-btn active" id="mode-image" onclick="setMode('image')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Make image
+      </button>
+      <button class="mode-btn" id="mode-video" onclick="setMode('video')">
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="14" height="14" rx="2"/><polygon points="16 10 22 6.5 22 17.5 16 14"/></svg>
+        Make video
+      </button>
+    </div>
+
     <div>
       <div class="section-label">
         <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
@@ -434,9 +499,12 @@
         <textarea id="prompt" rows="4" placeholder="Describe your idea here…"></textarea>
         <div class="sparkle">✦</div>
       </div>
+      <div class="prompt-hint" id="prompt-hint" style="display:none">
+        Name your references in the prompt — e.g. <b>“the woman from Image 1 dancing in a neon arcade, paced like Video 1”</b>
+      </div>
     </div>
 
-    <div>
+    <div id="img-ref-section">
       <div class="ref-header">
         <div class="section-label" style="margin:0">Reference images</div>
         <div class="ref-count"><span id="ref-count">0</span>/9</div>
@@ -450,7 +518,34 @@
       <div class="ref-note">Optional — add images to enable edit mode</div>
     </div>
 
-    <div>
+    <div id="vid-ref-section" style="display:none">
+      <div class="ref-header">
+        <div class="section-label" style="margin:0">References</div>
+        <div class="ref-count" id="vid-ref-count">0/10 · 0/5 · 0/5</div>
+      </div>
+      <div class="add-row">
+        <label class="ref-upload" for="vimg-input">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+          Image
+        </label>
+        <label class="ref-upload" for="vvid-input">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="5" width="14" height="14" rx="2"/><polygon points="16 10 22 6.5 22 17.5 16 14"/></svg>
+          Video
+        </label>
+        <label class="ref-upload" for="vaud-input">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+          Audio
+        </label>
+      </div>
+      <input type="file" id="vimg-input" accept="image/*" multiple onchange="addVideoRefs(event,'image')"/>
+      <input type="file" id="vvid-input" accept="video/mp4,video/quicktime" multiple onchange="addVideoRefs(event,'video')"/>
+      <input type="file" id="vaud-input" accept="audio/*" multiple onchange="addVideoRefs(event,'audio')"/>
+      <div class="ref-thumbs" id="vid-ref-thumbs"></div>
+      <div class="ref-note">Up to 10 images, 5 videos and 5 audio files. Videos must be 1–15 seconds.</div>
+      <div id="vid-ref-issues"></div>
+    </div>
+
+    <div id="img-settings">
       <div class="section-label">Settings</div>
       <div class="setting-row">
         <div class="setting-name">Size</div>
@@ -491,12 +586,28 @@
       </div>
     </div>
 
+    <div id="vid-settings" style="display:none">
+      <div class="section-label">Settings</div>
+      <div class="setting-row">
+        <div class="setting-name">Length</div>
+        <div class="size-grid" id="dur-grid"></div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-name">Size</div>
+        <div class="size-grid" id="vratio-grid"></div>
+      </div>
+      <div class="setting-row">
+        <div class="setting-name">Quality</div>
+        <div class="size-grid" id="vres-grid"></div>
+      </div>
+    </div>
+
     <div style="margin-top:auto">
       <button class="btn-generate" id="gen-btn" onclick="handleGenerate()">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-        Generate image
+        <span id="gen-btn-label">Generate image</span>
       </button>
-      <div class="gen-cost">This will cost <b>1 credit</b></div>
+      <div class="gen-cost" id="gen-cost">This will cost <b>1 credit</b></div>
     </div>
 
   </div>
@@ -640,9 +751,9 @@ async function buyPack(packId) {
   }
 }
 
-function saveGeneration(imageUrl, prompt) {
+function saveGeneration(imageUrl, prompt, type) {
   const saved = JSON.parse(localStorage.getItem('imagine_generations') || '[]');
-  saved.unshift({ imageUrl, prompt });
+  saved.unshift({ imageUrl, prompt, type: type || 'image' });
   if (saved.length > 50) saved.pop();
   localStorage.setItem('imagine_generations', JSON.stringify(saved));
 }
@@ -668,20 +779,278 @@ function loadSavedGenerations() {
   document.getElementById('empty-state').style.display = 'none';
   document.getElementById('gen-grid').style.display = 'grid';
   const grid = document.getElementById('gen-grid');
-  saved.forEach(({ imageUrl, prompt }) => {
+  saved.forEach(({ imageUrl, prompt, type }) => {
+    const isVideo = type === 'video';
     const card = document.createElement('div');
     card.className = 'gen-card';
     card.innerHTML = `
-      <img src="${imageUrl}" alt="Generated image"/>
+      ${isVideo
+        ? `<video src="${imageUrl}" controls loop playsinline preload="metadata"></video>`
+        : `<img src="${imageUrl}" alt="Generated image"/>`}
       <div class="gen-card-footer">
         <span class="gen-prompt-preview">${prompt}</span>
-        <a class="btn-dl-small" href="${imageUrl}" download="imagine.png">↓ Save</a>
+        <a class="btn-dl-small" href="${imageUrl}" download="imagine.${isVideo ? 'mp4' : 'png'}">↓ Save</a>
       </div>`;
     grid.appendChild(card);
   });
 }
 
-async function handleGenerate() {
+/* =========================================================
+   VIDEO MODE — Wan 3.0 reference-to-video
+   ========================================================= */
+
+let mode = 'image';
+let videoRefs = [];                       // { file, url, kind, issue }
+let vidDuration = 5, vidRatio = '16:9', vidRes = '720p';
+
+const VIDEO_CREDITS_PER_SECOND = { '720p': 1, '1080p': 2 };
+const VID_MAX = { image: 10, video: 5, audio: 5 };
+const VID_RATIOS = [
+  { v: '16:9', w: 16, h: 9 }, { v: '9:16', w: 9, h: 16 }, { v: '1:1', w: 12, h: 12 },
+  { v: '4:3', w: 14, h: 11 }, { v: '3:4', w: 11, h: 14 },
+];
+
+function videoCost() {
+  return Math.ceil(vidDuration * (VIDEO_CREDITS_PER_SECOND[vidRes] || 1));
+}
+
+function setMode(next) {
+  mode = next;
+  const isVid = mode === 'video';
+  document.getElementById('mode-image').classList.toggle('active', !isVid);
+  document.getElementById('mode-video').classList.toggle('active', isVid);
+  document.getElementById('img-ref-section').style.display = isVid ? 'none' : '';
+  document.getElementById('vid-ref-section').style.display = isVid ? '' : 'none';
+  document.getElementById('img-settings').style.display    = isVid ? 'none' : '';
+  document.getElementById('vid-settings').style.display    = isVid ? '' : 'none';
+  document.getElementById('prompt-hint').style.display     = isVid ? '' : 'none';
+  document.getElementById('prompt').placeholder = isVid
+    ? 'Describe your video here…' : 'Describe your idea here…';
+  document.getElementById('gen-btn-label').textContent = isVid
+    ? 'Generate video' : 'Generate image';
+  updateGenCost();
+}
+
+function updateGenCost() {
+  const c = mode === 'video' ? videoCost() : 1;
+  document.getElementById('gen-cost').innerHTML =
+    `This will cost <b>${c} ${c === 1 ? 'credit' : 'credits'}</b>`;
+}
+
+function buildVideoSettings() {
+  const durGrid = document.getElementById('dur-grid');
+  for (let n = 1; n <= 15; n++) {
+    const b = document.createElement('button');
+    b.className = 'size-btn' + (n === vidDuration ? ' active' : '');
+    b.textContent = n + 's';
+    b.onclick = () => {
+      vidDuration = n;
+      [...durGrid.children].forEach(c => c.classList.remove('active'));
+      b.classList.add('active');
+      updateGenCost();
+    };
+    durGrid.appendChild(b);
+  }
+
+  const ratioGrid = document.getElementById('vratio-grid');
+  VID_RATIOS.forEach(r => {
+    const b = document.createElement('button');
+    b.className = 'size-btn' + (r.v === vidRatio ? ' active' : '');
+    b.innerHTML = `<svg class="size-icon" width="${r.w}" height="${r.h}" viewBox="0 0 ${r.w} ${r.h}"><rect x="1" y="1" width="${r.w - 2}" height="${r.h - 2}" rx="1"/></svg> ${r.v}`;
+    b.onclick = () => {
+      vidRatio = r.v;
+      [...ratioGrid.children].forEach(c => c.classList.remove('active'));
+      b.classList.add('active');
+    };
+    ratioGrid.appendChild(b);
+  });
+
+  const resGrid = document.getElementById('vres-grid');
+  ['720p', '1080p'].forEach(v => {
+    const b = document.createElement('button');
+    b.className = 'size-btn' + (v === vidRes ? ' active' : '');
+    b.textContent = v;
+    b.onclick = () => {
+      vidRes = v;
+      [...resGrid.children].forEach(c => c.classList.remove('active'));
+      b.classList.add('active');
+      updateGenCost();
+    };
+    resGrid.appendChild(b);
+  });
+}
+
+function countKind(kind) { return videoRefs.filter(r => r.kind === kind).length; }
+
+function addVideoRefs(e, kind) {
+  Array.from(e.target.files).forEach(file => {
+    if (countKind(kind) >= VID_MAX[kind]) return;
+    const ref = { file, url: URL.createObjectURL(file), kind, issue: null };
+    if (kind === 'video' && file.size > 100 * 1024 * 1024) ref.issue = 'over 100 MB — trim it first';
+    videoRefs.push(ref);
+    if (kind === 'video') probeVideoRef(ref);
+  });
+  renderVideoThumbs();
+  e.target.value = '';
+}
+
+function probeVideoRef(ref) {
+  const el = document.createElement('video');
+  el.preload = 'metadata';
+  el.onloadedmetadata = () => {
+    ref.seconds = el.duration;
+    if (!ref.issue) {
+      if (el.duration < 1)  ref.issue = 'shorter than 1s — Wan needs 1–15s';
+      if (el.duration > 15) ref.issue = 'longer than 15s — trim it first';
+    }
+    renderVideoThumbs();
+  };
+  el.onerror = () => { ref.issue = 'could not be read — try MP4 or MOV'; renderVideoThumbs(); };
+  el.src = ref.url;
+}
+
+function removeVideoRef(idx) {
+  URL.revokeObjectURL(videoRefs[idx].url);
+  videoRefs.splice(idx, 1);
+  renderVideoThumbs();
+}
+
+function labelFor(ref) {
+  const same = videoRefs.filter(r => r.kind === ref.kind);
+  const name = { image: 'Image', video: 'Video', audio: 'Audio' }[ref.kind];
+  return `${name} ${same.indexOf(ref) + 1}`;
+}
+
+function renderVideoThumbs() {
+  document.getElementById('vid-ref-count').textContent =
+    `${countKind('image')}/10 · ${countKind('video')}/5 · ${countKind('audio')}/5`;
+
+  document.getElementById('vid-ref-thumbs').innerHTML = videoRefs.map((r, i) => {
+    const inner = r.kind === 'image'
+      ? `<img src="${r.url}" alt="ref"/>`
+      : r.kind === 'video'
+        ? `<video src="${r.url}" muted preload="metadata"></video>`
+        : `<div style="display:grid;place-items:center;height:100%;color:var(--muted)">♪</div>`;
+    return `<div class="ref-thumb-wrap" style="${r.issue ? 'border:1px solid #e4645c' : ''}">
+      ${inner}
+      <span class="ref-badge">${labelFor(r)}</span>
+      <button class="ref-remove" onclick="removeVideoRef(${i})">✕</button>
+    </div>`;
+  }).join('');
+
+  document.getElementById('vid-ref-issues').innerHTML = videoRefs
+    .filter(r => r.issue)
+    .map(r => `<div class="ref-issue">${labelFor(r)} — ${r.issue}</div>`)
+    .join('');
+}
+
+function addVideoCardToGrid(videoUrl, prompt) {
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('gen-grid').style.display = 'grid';
+  const grid = document.getElementById('gen-grid');
+  const card = document.createElement('div');
+  card.className = 'gen-card';
+  card.innerHTML = `
+    <video src="${videoUrl}" controls loop playsinline preload="metadata"></video>
+    <div class="gen-card-footer">
+      <span class="gen-prompt-preview">${prompt}</span>
+      <a class="btn-dl-small" href="${videoUrl}" download="imagine.mp4">↓ Save</a>
+    </div>`;
+  grid.insertBefore(card, grid.firstChild);
+  return card;
+}
+
+async function handleGenerateVideo() {
+  const prompt = document.getElementById('prompt').value.trim();
+  if (!prompt) { alert('Please write a prompt first.'); return; }
+  if (!videoRefs.length) { alert('Add at least one reference first.'); return; }
+  const blocked = videoRefs.find(r => r.issue);
+  if (blocked) { alert(`${labelFor(blocked)} — ${blocked.issue}`); return; }
+
+  const token = getToken();
+  if (!token) { openModal(); return; }
+
+  const btn = document.getElementById('gen-btn');
+  btn.disabled = true;
+  btn.innerHTML = `<div class="spinner"></div> Generating…`;
+
+  document.getElementById('empty-state').style.display = 'none';
+  document.getElementById('gen-grid').style.display = 'grid';
+  const grid = document.getElementById('gen-grid');
+
+  const card = document.createElement('div');
+  card.className = 'gen-card loading';
+  card.innerHTML = `<div class="video-progress"><div class="spinner"></div><span>Queued…</span></div>`;
+  grid.insertBefore(card, grid.firstChild);
+  const say = (t) => { const s = card.querySelector('span'); if (s) s.textContent = t; };
+
+  try {
+    const fd = new FormData();
+    fd.append('prompt', prompt);
+    fd.append('duration', vidDuration);
+    fd.append('aspect_ratio', vidRatio);
+    fd.append('resolution', vidRes);
+    const n = { image: 0, video: 0, audio: 0 };
+    videoRefs.forEach(r => {
+      const prefix = { image: 'img_', video: 'vid_', audio: 'aud_' }[r.kind];
+      fd.append(prefix + n[r.kind]++, r.file);
+    });
+
+    const r = await fetch(`${BACKEND}/generate-video`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}` },
+      body: fd,
+    });
+    const { jobId, newToken, credits, error } = await r.json();
+    if (error) throw new Error(error);
+
+    setToken(newToken);
+    updateCreditUI(credits);
+
+    // Poll until the job reaches a terminal state (~8 min ceiling).
+    const started = Date.now();
+    for (let i = 0; i < 200; i++) {
+      await new Promise(res => setTimeout(res, 3000));
+      const jr = await fetch(`${BACKEND}/video-job/${jobId}`);
+      const job = await jr.json();
+
+      if (job.status === 'completed') {
+        card.remove();
+        addVideoCardToGrid(job.videoUrl, prompt);
+        saveGeneration(job.videoUrl, prompt, 'video');
+        return;
+      }
+      if (job.status === 'failed') {
+        if (job.refundToken) { setToken(job.refundToken); updateCreditUI(job.credits); }
+        throw new Error(job.error || 'Generation failed — your credits were returned.');
+      }
+      const secs = Math.round((Date.now() - started) / 1000);
+      say(job.status === 'uploading' ? 'Uploading references…' : `Generating… ${secs}s`);
+    }
+    throw new Error('Timed out waiting for the video.');
+
+  } catch (err) {
+    card.remove();
+    if (grid.children.length === 0) {
+      document.getElementById('empty-state').style.display = 'flex';
+      grid.style.display = 'none';
+    }
+    alert('Error: ' + err.message);
+    if (err.message.includes('token')) { clearToken(); updateCreditUI(0); }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = `
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+      <span id="gen-btn-label">${mode === 'video' ? 'Generate video' : 'Generate image'}</span>`;
+    refreshCredits();
+  }
+}
+
+function handleGenerate() {
+  return mode === 'video' ? handleGenerateVideo() : handleGenerateImage();
+}
+
+async function handleGenerateImage() {
   const prompt = document.getElementById('prompt').value.trim();
   if (!prompt) { alert('Please write a prompt first.'); return; }
   const token = getToken();
@@ -721,7 +1090,7 @@ async function handleGenerate() {
     updateCreditUI(credits);
     skeletonCard.remove();
     addCardToGrid(imageUrl, prompt);
-    saveGeneration(imageUrl, prompt);
+    saveGeneration(imageUrl, prompt, 'image');
 
   } catch (err) {
     skeletonCard.remove();
@@ -737,12 +1106,14 @@ async function handleGenerate() {
     btn.disabled = false;
     btn.innerHTML = `
       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-      Generate image`;
+      <span id="gen-btn-label">${mode === 'video' ? 'Generate video' : 'Generate image'}</span>`;
     refreshCredits();
   }
 }
 
 (async function init() {
+  buildVideoSettings();
+  setMode('image');
   const params = new URLSearchParams(window.location.search);
   const sessionId = params.get('session_id');
   if (sessionId) {
