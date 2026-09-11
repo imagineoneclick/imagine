@@ -293,25 +293,39 @@ async function runVideoJob(jobId, files) {
 
   job.status = 'processing';
   job.predictionId = predictionId;
+  console.log(`Video job ${job.id} submitted · prediction ${predictionId} · ${job.duration}s ${job.resolution}`);
 
-  for (let i = 0; i < 160; i++) {           // ~8 minutes at 3s
+  const MAX_POLLS = 400;                    // ~20 minutes at 3s
+  for (let i = 0; i < MAX_POLLS; i++) {
     await new Promise(r => setTimeout(r, 3000));
-    const pollRes = await axios.get(
-      `https://api.wavespeed.ai/api/v3/predictions/${predictionId}/result`,
-      { headers: { 'Authorization': `Bearer ${process.env.WAVESPEED_API_KEY}` } }
-    );
+
+    let pollRes;
+    try {
+      pollRes = await axios.get(
+        `https://api.wavespeed.ai/api/v3/predictions/${predictionId}/result`,
+        { headers: { 'Authorization': `Bearer ${process.env.WAVESPEED_API_KEY}` } }
+      );
+    } catch (err) {
+      // A blip while polling shouldn't throw away a generation we've paid for.
+      console.warn(`Video job ${job.id} poll error at ${i * 3}s: ${err.message}`);
+      continue;
+    }
+
     const status = pollRes.data?.data?.status;
+    if (i % 10 === 0) console.log(`Video job ${job.id} · ${status} · ${i * 3}s elapsed`);
+
     if (status === 'completed') {
       job.videoUrl = pollRes.data?.data?.outputs?.[0];
       if (!job.videoUrl) throw new Error('Completed with no output URL');
       job.status = 'completed';
+      console.log(`Video job ${job.id} completed in ${i * 3}s`);
       return;
     }
     if (['failed', 'cancelled', 'timeout', 'deleted'].includes(status)) {
       throw new Error(`Generation ${status} on WaveSpeed`);
     }
   }
-  throw new Error('Video generation timed out');
+  throw new Error(`Still generating after 20 minutes. Recover it with prediction ${predictionId}`);
 }
 
 app.post('/generate-video', videoUpload.any(), async (req, res) => {
@@ -362,9 +376,35 @@ app.get('/video-job/:id', (req, res) => {
     status: job.status,
     videoUrl: job.videoUrl,
     error: job.error,
+    predictionId: job.predictionId || null,
     refundToken: job.refundToken,
     credits: job.status === 'failed' ? job.creditsAfter + job.cost : job.creditsAfter,
   });
+});
+
+// Rescue a generation that finished on WaveSpeed after we stopped waiting —
+// or one lost to a redeploy. Get the prediction ID from your WaveSpeed
+// dashboard (or the Railway log) and call this with your DEV_CREDITS_KEY.
+app.get('/video-recover', async (req, res) => {
+  const key = process.env.DEV_CREDITS_KEY;
+  if (!key || req.query.key !== key) {
+    return res.status(404).send('Cannot GET /video-recover');
+  }
+  const id = req.query.prediction_id;
+  if (!id) return res.status(400).json({ error: 'Pass prediction_id.' });
+
+  try {
+    const r = await axios.get(
+      `https://api.wavespeed.ai/api/v3/predictions/${id}/result`,
+      { headers: { 'Authorization': `Bearer ${process.env.WAVESPEED_API_KEY}` } }
+    );
+    res.json({
+      status: r.data?.data?.status,
+      outputs: r.data?.data?.outputs || [],
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.response?.data?.message || err.message });
+  }
 });
 
 // Drop finished jobs after an hour so the Map doesn't grow forever.
