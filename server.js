@@ -375,9 +375,17 @@ setInterval(() => {
   }
 }, 10 * 60 * 1000);
 
+// Credit faucet for testing. Requires DEV_CREDITS_KEY to be set in Railway
+// AND matched in the query string — without both, this 404s like any unknown
+// route, so it's closed by default. Delete the env var to shut it off entirely.
 app.get('/dev-credits', (req, res) => {
-  const { token } = issueToken(10);
-  res.json({ token, credits: 10 });
+  const key = process.env.DEV_CREDITS_KEY;
+  if (!key || req.query.key !== key) {
+    return res.status(404).send('Cannot GET /dev-credits');
+  }
+  const amount = Math.min(Math.max(parseInt(req.query.amount, 10) || 10, 1), 200);
+  const { token } = issueToken(amount);
+  res.json({ token, credits: amount });
 });
 
 app.post('/webhook', (req, res) => {
