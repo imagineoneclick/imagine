@@ -213,7 +213,7 @@ const videoUpload = multer({
   limits: { fileSize: 100 * 1024 * 1024, files: 20 },
 });
 
-const VIDEO_CREDITS_PER_SECOND = { '720p': 1, '1080p': 2 };
+const VIDEO_CREDITS_PER_SECOND = { '480p': 0.5, '720p': 1, '1080p': 2 };
 const videoJobs = new Map();
 
 function videoCost(resolution, duration) {
@@ -317,9 +317,9 @@ async function runVideoJob(jobId, files) {
 app.post('/generate-video', videoUpload.any(), async (req, res) => {
   const prompt     = (req.body?.prompt || '').trim();
   const aspect     = req.body?.aspect_ratio || '16:9';
-  const resolution = ['720p', '1080p'].includes(req.body?.resolution) ? req.body.resolution : '720p';
+  const resolution = ['480p', '720p', '1080p'].includes(req.body?.resolution) ? req.body.resolution : '720p';
 
-  // Wan 3.0's minimum is 2s — the UI offers 1s, so floor it here.
+  // The UI offers 4–15s; clamp anything else into Wan 3.0's valid range.
   let duration = parseInt(req.body?.duration, 10) || 5;
   duration = Math.min(15, Math.max(2, duration));
 
@@ -467,4 +467,3 @@ app.get('/verify-crypto', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`imagine-backend running on port ${PORT}`));
-
