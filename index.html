@@ -437,11 +437,25 @@
     .add-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; }
     .add-row .ref-upload { margin: 0; }
 
-    .prompt-hint {
-      font-size: 0.75rem; color: var(--muted);
-      margin-top: 0.5rem; line-height: 1.5;
+    .dur-select {
+      width: 100%;
+      background: var(--card);
+      border: 1px solid var(--border-md);
+      border-radius: var(--r);
+      color: var(--text);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.85rem;
+      padding: 0.6rem 0.75rem;
+      cursor: pointer;
+      appearance: none;
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23f0f0f0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
+      background-repeat: no-repeat;
+      background-position: right 0.7rem center;
+      padding-right: 2rem;
+      transition: border-color 0.2s;
     }
-    .prompt-hint b { color: var(--purple-bright); font-weight: 500; }
+    .dur-select:hover, .dur-select:focus { border-color: var(--purple); outline: none; }
+    .dur-select option { background: var(--card); color: var(--text); }
 
     .ref-thumb-wrap video { width: 100%; height: 100%; object-fit: cover; }
     .ref-badge {
@@ -498,9 +512,6 @@
       <div class="prompt-box">
         <textarea id="prompt" rows="4" placeholder="Describe your idea here…"></textarea>
         <div class="sparkle">✦</div>
-      </div>
-      <div class="prompt-hint" id="prompt-hint" style="display:none">
-        Name your references in the prompt — e.g. <b>“the woman from Image 1 dancing in a neon arcade, paced like Video 1”</b>
       </div>
     </div>
 
@@ -590,7 +601,7 @@
       <div class="section-label">Settings</div>
       <div class="setting-row">
         <div class="setting-name">Length</div>
-        <div class="size-grid" id="dur-grid"></div>
+        <select class="dur-select" id="dur-select"></select>
       </div>
       <div class="setting-row">
         <div class="setting-name">Size</div>
@@ -803,7 +814,7 @@ let mode = 'image';
 let videoRefs = [];                       // { file, url, kind, issue }
 let vidDuration = 5, vidRatio = '16:9', vidRes = '720p';
 
-const VIDEO_CREDITS_PER_SECOND = { '720p': 1, '1080p': 2 };
+const VIDEO_CREDITS_PER_SECOND = { '480p': 0.5, '720p': 1, '1080p': 2 };
 const VID_MAX = { image: 10, video: 5, audio: 5 };
 const VID_RATIOS = [
   { v: '16:9', w: 16, h: 9 }, { v: '9:16', w: 9, h: 16 }, { v: '1:1', w: 12, h: 12 },
@@ -823,7 +834,6 @@ function setMode(next) {
   document.getElementById('vid-ref-section').style.display = isVid ? '' : 'none';
   document.getElementById('img-settings').style.display    = isVid ? 'none' : '';
   document.getElementById('vid-settings').style.display    = isVid ? '' : 'none';
-  document.getElementById('prompt-hint').style.display     = isVid ? '' : 'none';
   document.getElementById('prompt').placeholder = isVid
     ? 'Describe your video here…' : 'Describe your idea here…';
   document.getElementById('gen-btn-label').textContent = isVid
@@ -838,19 +848,15 @@ function updateGenCost() {
 }
 
 function buildVideoSettings() {
-  const durGrid = document.getElementById('dur-grid');
-  for (let n = 1; n <= 15; n++) {
-    const b = document.createElement('button');
-    b.className = 'size-btn' + (n === vidDuration ? ' active' : '');
-    b.textContent = n + 's';
-    b.onclick = () => {
-      vidDuration = n;
-      [...durGrid.children].forEach(c => c.classList.remove('active'));
-      b.classList.add('active');
-      updateGenCost();
-    };
-    durGrid.appendChild(b);
+  const durSelect = document.getElementById('dur-select');
+  for (let n = 4; n <= 15; n++) {
+    const o = document.createElement('option');
+    o.value = n;
+    o.textContent = n + ' seconds';
+    if (n === vidDuration) o.selected = true;
+    durSelect.appendChild(o);
   }
+  durSelect.onchange = () => { vidDuration = Number(durSelect.value); updateGenCost(); };
 
   const ratioGrid = document.getElementById('vratio-grid');
   VID_RATIOS.forEach(r => {
@@ -866,7 +872,7 @@ function buildVideoSettings() {
   });
 
   const resGrid = document.getElementById('vres-grid');
-  ['720p', '1080p'].forEach(v => {
+  ['480p', '720p', '1080p'].forEach(v => {
     const b = document.createElement('button');
     b.className = 'size-btn' + (v === vidRes ? ' active' : '');
     b.textContent = v;
