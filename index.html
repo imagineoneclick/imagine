@@ -437,25 +437,35 @@
     .add-row { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0.4rem; }
     .add-row .ref-upload { margin: 0; }
 
-    .dur-select {
-      width: 100%;
-      background: var(--card);
+    .dur-wrap { position: relative; display: inline-block; }
+    .dur-pop {
+      position: absolute; top: calc(100% + 6px); left: 0; z-index: 30;
+      background: var(--panel);
       border: 1px solid var(--border-md);
-      border-radius: var(--r);
-      color: var(--text);
-      font-family: 'Inter', sans-serif;
-      font-size: 0.85rem;
-      padding: 0.6rem 0.75rem;
-      cursor: pointer;
-      appearance: none;
-      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%23f0f0f0' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'><polyline points='6 9 12 15 18 9'/></svg>");
-      background-repeat: no-repeat;
-      background-position: right 0.7rem center;
-      padding-right: 2rem;
-      transition: border-color 0.2s;
+      border-radius: var(--rl);
+      padding: 0.45rem;
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.3rem;
+      box-shadow: 0 12px 32px rgba(0,0,0,0.55);
+      min-width: 196px;
     }
-    .dur-select:hover, .dur-select:focus { border-color: var(--purple); outline: none; }
-    .dur-select option { background: var(--card); color: var(--text); }
+    .dur-pop[hidden] { display: none; }
+    .dur-opt {
+      background: transparent;
+      border: 1px solid transparent;
+      border-radius: 6px;
+      color: var(--muted);
+      font-family: 'Inter', sans-serif;
+      font-size: 0.8rem;
+      padding: 0.45rem 0.2rem;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s, border-color 0.15s;
+    }
+    .dur-opt:hover { color: var(--text); background: var(--card); }
+    .dur-opt.active {
+      border-color: var(--purple);
+      color: var(--purple-bright);
+      background: var(--purple-dim);
+    }
 
     .ref-thumb-wrap video { width: 100%; height: 100%; object-fit: cover; }
     .ref-badge {
@@ -601,7 +611,13 @@
       <div class="section-label">Settings</div>
       <div class="setting-row">
         <div class="setting-name">Length</div>
-        <select class="dur-select" id="dur-select"></select>
+        <div class="dur-wrap">
+          <button class="size-btn active" id="dur-btn" type="button" aria-haspopup="true" aria-expanded="false">
+            <svg class="size-icon" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><polyline points="12 7 12 12 15.5 14"/></svg>
+            <span id="dur-label">5s</span>
+          </button>
+          <div class="dur-pop" id="dur-pop" hidden></div>
+        </div>
       </div>
       <div class="setting-row">
         <div class="setting-name">Size</div>
@@ -685,7 +701,16 @@
 const BACKEND   = 'https://imagine-production-5857.up.railway.app';
 const STRIPE_PK = 'pk_live_51Tf4dKIsq224AzhGRQDalZSWfHL0T7HdxL1ZNTLQHFjSG6jCRuuGKyWsgNlNjXiNhy9tzqykMNqwbFJoYhEaQXRz00bQp2gLlP';
 
-const stripe = Stripe(STRIPE_PK);
+// Created on first use. If js.stripe.com is blocked (ad blockers often do),
+// this used to throw at load and kill the whole page script — generation included.
+let _stripe = null;
+function getStripe() {
+  if (!_stripe) {
+    if (typeof Stripe === 'undefined') throw new Error('Checkout is blocked by an extension in your browser.');
+    _stripe = Stripe(STRIPE_PK);
+  }
+  return _stripe;
+}
 let selectedRatio = '1:1';
 let refImages = [];
 
@@ -755,7 +780,7 @@ async function buyPack(packId) {
     });
     const { sessionId, error } = await r.json();
     if (error) throw new Error(error);
-    await stripe.redirectToCheckout({ sessionId });
+    await getStripe().redirectToCheckout({ sessionId });
   } catch (err) {
     alert('Could not start checkout: ' + err.message);
     document.querySelectorAll('.pack').forEach(p => p.style.pointerEvents = '');
@@ -848,15 +873,42 @@ function updateGenCost() {
 }
 
 function buildVideoSettings() {
-  const durSelect = document.getElementById('dur-select');
+  const durBtn   = document.getElementById('dur-btn');
+  const durLabel = document.getElementById('dur-label');
+  const durPop   = document.getElementById('dur-pop');
+
+  const closeDur = () => { durPop.hidden = true; durBtn.setAttribute('aria-expanded', 'false'); };
+
   for (let n = 4; n <= 15; n++) {
-    const o = document.createElement('option');
-    o.value = n;
-    o.textContent = n + ' seconds';
-    if (n === vidDuration) o.selected = true;
-    durSelect.appendChild(o);
+    const o = document.createElement('button');
+    o.type = 'button';
+    o.className = 'dur-opt' + (n === vidDuration ? ' active' : '');
+    o.textContent = n + 's';
+    o.onclick = () => {
+      vidDuration = n;
+      durLabel.textContent = n + 's';
+      [...durPop.children].forEach(c => c.classList.remove('active'));
+      o.classList.add('active');
+      closeDur();
+      updateGenCost();
+    };
+    durPop.appendChild(o);
   }
-  durSelect.onchange = () => { vidDuration = Number(durSelect.value); updateGenCost(); };
+  durLabel.textContent = vidDuration + 's';
+
+  durBtn.onclick = (e) => {
+    e.stopPropagation();
+    const opening = durPop.hidden;
+    durPop.hidden = !opening;
+    durBtn.setAttribute('aria-expanded', String(opening));
+  };
+
+  document.addEventListener('click', (e) => {
+    if (!durPop.hidden && !durPop.contains(e.target) && !durBtn.contains(e.target)) closeDur();
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && !durPop.hidden) closeDur();
+  });
 
   const ratioGrid = document.getElementById('vratio-grid');
   VID_RATIOS.forEach(r => {
