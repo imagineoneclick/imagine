@@ -593,6 +593,11 @@
       #mode-image { padding: 8px 4px; font-size: 11px; }
       .generate-group { gap: 12px; }
     }
+    .pack.best-value { border-color: #b98b35; }
+    .pack.best-value .pack-badge { background: linear-gradient(110deg,#c7963e,#edce84); color: #251b08; }
+    .pack.best-value .pack-name b { color: #e6c477; }
+    .pack.best-value:hover { background: rgba(202,157,68,.08); border-color: #e6c477; }
+    .modal { max-height: calc(100dvh - 32px); overflow-y: auto; }
   </style>
 </head>
 <body>
@@ -720,19 +725,27 @@
         <div class="pack-badge">Most popular</div>
         <div class="pack-info">
           <div class="pack-name"><b>20</b> credits</div>
-          <div class="pack-sub">$0.75 per image · save 25%</div>
+          <div class="pack-sub">$0.75 per credit · save 25%</div>
         </div>
         <div class="pack-price">$14.99</div>
       </div>
       <div class="pack" onclick="buyPack('pro')">
         <div class="pack-info">
           <div class="pack-name"><b>50</b> credits</div>
-          <div class="pack-sub">$0.60 per image · save 40%</div>
+          <div class="pack-sub">$0.60 per credit · save 40%</div>
         </div>
         <div class="pack-price">$29.99</div>
       </div>
+    <div class="pack best-value" onclick="buyPack('value')" role="button" tabindex="0" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();buyPack('value');}">
+      <div class="pack-badge">Best value</div>
+      <div class="pack-info">
+        <div class="pack-name"><b>100</b> credits</div>
+        <div class="pack-sub">$0.50 per credit · save 50%</div>
+      </div>
+      <div class="pack-price">$49.99</div>
     </div>
-    <p class="modal-note">Secured by Stripe · Credits never expire · Stored in your browser</p>
+    </div>
+    <p class="modal-note">Prices in USD · Secured by Stripe<br>Credits never expire · Stored in your browser</p>
   </div>
 </div>
 

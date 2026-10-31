@@ -36,6 +36,7 @@ const PACKS = {
   starter:  { credits: 5,  amount: 499,  label: '5 credits' },
   standard: { credits: 20, amount: 1499, label: '20 credits' },
   pro:      { credits: 50, amount: 2999, label: '50 credits' },
+  value:    { credits: 100, amount: 4999, label: '100 credits' },
 };
 
 const usedJtis = new Set();
@@ -456,6 +457,7 @@ app.post('/create-crypto-payment', async (req, res) => {
     starter:  { credits: 5,  amount: 4.99,  name: '5 Credits' },
     standard: { credits: 20, amount: 14.99, name: '20 Credits' },
     pro:      { credits: 50, amount: 29.99, name: '50 Credits' },
+    value:    { credits: 100, amount: 49.99, name: '100 Credits' },
   };
   const selected = packages[pack];
   if (!selected) return res.status(400).json({ error: 'Invalid pack.' });
@@ -502,6 +504,7 @@ app.get('/verify-crypto', async (req, res) => {
     starter:  { credits: 5  },
     standard: { credits: 20 },
     pro:      { credits: 50 },
+    value:    { credits: 100 },
   };
   const selected = packages[pack];
   if (!selected || !payment_id) return res.status(400).json({ error: 'Invalid request.' });
