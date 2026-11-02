@@ -130,12 +130,17 @@ async function uploadToWaveSpeed(buffer, filename, contentType) {
 }
 
 app.post('/generate', upload.any(), async (req, res) => {
+  const headshot = req.body?.preset === 'studio-headshot';
+  if (headshot && (req.files?.length !== 1 || !req.files[0].mimetype.startsWith('image/'))) {
+    return res.status(400).json({ error: 'Add one photo to create your reference image.' });
+  }
+
   let payload;
   try { payload = verifyAndConsume(req.headers.authorization); }
   catch (err) { return res.status(401).json({ error: err.message }); }
 
-  const prompt = req.body?.prompt || '';
-  const ratio  = req.body?.ratio  || '1:1';
+  const prompt = headshot ? 'Convert the input photo into a polished agency headshot of the exact same person. Preserve identity and clothing. No accessories. Tight centered head-and-shoulders crop, neutral confident expression, eyes to camera. Seamless light gray backdrop, soft falloff, no texture or scenery. Three-point studio lighting: key just above eye level, bounced fill, subtle rim, gentle jaw shadow and catchlights in both eyes. Eye-level 85mm portrait perspective, eyes tack sharp, ears and shoulders slightly softer. Neutral skin tones, balanced color, clean contrast. Groom hair naturally with individual strands visible. Realistic magazine retouch: remove temporary blemishes only. Keep facial structure, freckles, pores, fine lines and natural skin texture.' : req.body?.prompt || '';
+  const ratio = headshot ? '3:4' : req.body?.ratio || '1:1';
 
   if (!prompt || prompt.trim().length < 1) {
     usedJtis.delete(payload.jti);
@@ -163,7 +168,16 @@ app.post('/generate', upload.any(), async (req, res) => {
     // Use image-edit model if reference images provided, otherwise text-to-image
     let endpoint, requestBody;
 
-    if (refImageUrls.length > 0) {
+    if (headshot) {
+      endpoint = 'https://api.wavespeed.ai/api/v3/google/nano-banana-pro/edit';
+      requestBody = {
+        prompt,
+        images: refImageUrls,
+        aspect_ratio: ratio,
+        resolution: '1k',
+        output_format: 'png',
+      };
+    } else if (refImageUrls.length > 0) {
       endpoint = 'https://api.wavespeed.ai/api/v3/alibaba/wan-2.7/image-edit';
       requestBody = {
         prompt: prompt.trim().slice(0, 800),
@@ -340,7 +354,15 @@ async function runVideoJob(jobId, files) {
 }
 
 app.post('/generate-video', videoUpload.any(), async (req, res) => {
-  const prompt     = (req.body?.prompt || '').trim();
+  const usePreset = req.body?.preset === 'reference-swap';
+  if (usePreset) {
+    const files = req.files || [];
+    if (files.length !== 2 || !files.some(f => f.fieldname === 'img_0' && f.mimetype.startsWith('image/')) ||
+        !files.some(f => f.fieldname === 'vid_0' && f.mimetype.startsWith('video/'))) {
+      return res.status(400).json({ error: 'Add one image and one video to generate.' });
+    }
+  }
+  const prompt = usePreset ? 'Replace the woman in Video 1 with the woman from Image 1. Image 1 defines the complete identity face, body and hair. Preserve every motion, action, camera move, outfit, lighting and background from Video 1 exactly. Remove all her tattoos and Remove all text' : (req.body?.prompt || '').trim();
   const aspect     = req.body?.aspect_ratio || '16:9';
   const resolution = ['480p', '720p', '1080p'].includes(req.body?.resolution) ? req.body.resolution : '720p';
 
