@@ -129,12 +129,34 @@ async function uploadToWaveSpeed(buffer, filename, contentType) {
   return data.download_url;
 }
 
+// The browser keeps this random receipt until it has saved the result.
+const imageJobs = new Map();
+app.get('/image-job/:id', (req, res) => {
+  res.set('Cache-Control', 'no-store');
+  const job = imageJobs.get(req.params.id);
+  if (!job) return res.status(404).json({ error: 'Image job not found.' });
+  try {
+    const owner = jwt.verify((req.headers.authorization || '').slice(7), process.env.JWT_SECRET);
+    if (owner.jti !== job.owner) throw new Error();
+  } catch {
+    return res.status(403).json({ error: 'This receipt belongs to another balance.' });
+  }
+  return res.json(job.result);
+});
+
 app.post('/generate', upload.any(), async (req, res) => {
   const headshot = req.body?.preset === 'studio-headshot';
   if (headshot && (req.files?.length !== 1 || !req.files[0].mimetype.startsWith('image/'))) {
     return res.status(400).json({ error: 'Add one photo to create your reference image.' });
   }
 
+  const receipt = headshot && req.body?.receipt;
+  if (receipt && !/^[0-9a-f-]{36}$/i.test(receipt)) {
+    return res.status(400).json({ error: 'Invalid image receipt.' });
+  }
+  if (receipt && imageJobs.has(receipt)) {
+    return res.status(409).json({ error: 'Image request already submitted.' });
+  }
   let payload;
   try { payload = verifyAndConsume(req.headers.authorization); }
   catch (err) { return res.status(401).json({ error: err.message }); }
@@ -158,6 +180,12 @@ app.post('/generate', upload.any(), async (req, res) => {
   };
   const size = sizeMap[ratio] ?? '1024*1024';
 
+  const job = receipt ? { owner: payload.jti, result: { status: 'processing' } } : null;
+  if (job) {
+    imageJobs.set(receipt, job);
+    res.status(202).json(job.result);
+    setTimeout(() => imageJobs.delete(receipt), 24 * 60 * 60 * 1000).unref();
+  }
   try {
     let refImageUrls = [];
     if (req.files && req.files.length > 0) {
@@ -223,12 +251,16 @@ app.post('/generate', upload.any(), async (req, res) => {
 
     const newCredits = payload.credits - 1;
     const { token: newToken } = issueToken(newCredits);
-    res.json({ imageUrl, newToken, credits: newCredits });
+    const result = { imageUrl, newToken, credits: newCredits };
+    if (job) job.result = { status: 'completed', ...result };
+    else res.json(result);
 
   } catch (err) {
     console.error('Generation error:', err.message);
     usedJtis.delete(payload.jti);
-    res.status(500).json({ error: 'Image generation failed: ' + err.message });
+    const error = 'Image generation failed: ' + err.message;
+    if (job) job.result = { status: 'failed', error };
+    else res.status(500).json({ error });
   }
 });
 

@@ -854,7 +854,7 @@ function clearToken(){ localStorage.removeItem('imagine_token'); }
 
 function updateCreditUI(count) {
   document.getElementById('credit-count').textContent = count;
-  document.getElementById('gen-btn').disabled = count === 0;
+  document.getElementById('gen-btn').disabled = generating || count === 0;
 }
 
 async function refreshCredits() {
@@ -1210,7 +1210,7 @@ async function handleGenerateVideo() {
       showEmpty();
     }
     alert('Error: ' + err.message);
-    if (err.message.includes('token')) { clearToken(); updateCreditUI(0); }
+
   } finally {
     btn.disabled = false;
     btn.innerHTML = `
@@ -1220,8 +1220,16 @@ async function handleGenerateVideo() {
   }
 }
 
-function handleGenerate() {
-  return mode === 'video' ? handleGenerateVideo() : handleGenerateImage();
+let generating = false;
+async function handleGenerate() {
+  if (generating) return;
+  generating = true;
+  try {
+    await (mode === 'video' ? handleGenerateVideo() : handleGenerateImage());
+  } finally {
+    generating = false;
+    refreshCredits();
+  }
 }
 
 async function handleGenerateImage() {
@@ -1248,12 +1256,33 @@ async function handleGenerateImage() {
     body.append('ref_0', refImages[0].file);
     const headers = { Authorization: `Bearer ${token}` };
 
-    const r = await fetch(`${BACKEND}/generate`, { method: 'POST', headers, body });
-    const { imageUrl, newToken, credits, error } = await r.json();
-    if (error) throw new Error(error);
-
-    setToken(newToken);
-    updateCreditUI(credits);
+    const key = 'imagine_image_receipt_' + token.split('.').pop();
+    let receipt = localStorage.getItem(key);
+    async function checkReceipt() {
+      return fetch(BACKEND + '/image-job/' + receipt, { headers, cache: 'no-store' });
+    }
+    let response = receipt ? await checkReceipt() : null;
+    if (!response || response.status === 404) {
+      receipt = crypto.randomUUID();
+      localStorage.setItem(key, receipt);
+      body.append('receipt', receipt);
+      response = await fetch(BACKEND + '/generate', { method: 'POST', headers, body });
+    }
+    let result = await response.json();
+    for (let attempt = 0; result.status === 'processing' && attempt < 150; attempt++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      response = await checkReceipt();
+      result = await response.json();
+    }
+    if (result.status === 'failed') localStorage.removeItem(key);
+    if (result.error) throw new Error(result.error);
+    if (!result.newToken || !result.imageUrl) throw new Error('Image still processing. Try again to check your result.');
+    const { imageUrl, newToken, credits } = result;
+    if (getToken() === token) {
+      setToken(newToken);
+      updateCreditUI(credits);
+    }
+    localStorage.removeItem(key);
     skeletonCard.remove();
     addCardToGrid(imageUrl, 'Reference image');
     saveGeneration(imageUrl, 'Reference image', 'image');
@@ -1264,9 +1293,7 @@ async function handleGenerateImage() {
       showEmpty();
     }
     alert('Error: ' + err.message);
-    if (err.message.includes('credit') || err.message.includes('token')) {
-      clearToken(); updateCreditUI(0);
-    }
+
   } finally {
     btn.disabled = false;
     btn.innerHTML = `
