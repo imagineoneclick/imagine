@@ -161,7 +161,7 @@ app.post('/generate', upload.any(), async (req, res) => {
   try { payload = verifyAndConsume(req.headers.authorization); }
   catch (err) { return res.status(401).json({ error: err.message }); }
 
-  const prompt = headshot ? 'Convert the input photo into a polished agency headshot of the exact same person. Preserve identity and clothing. No accessories. Tight centered head-and-shoulders crop, neutral confident expression, eyes to camera. Seamless light gray backdrop, soft falloff, no texture or scenery. Three-point studio lighting: key just above eye level, bounced fill, subtle rim, gentle jaw shadow and catchlights in both eyes. Eye-level 85mm portrait perspective, eyes tack sharp, ears and shoulders slightly softer. Neutral skin tones, balanced color, clean contrast. Groom hair naturally with individual strands visible. Realistic magazine retouch: remove temporary blemishes only. Keep facial structure, freckles, pores, fine lines and natural skin texture.' : req.body?.prompt || '';
+  const prompt = headshot ? 'Photorealistic close-up portrait of the reference image, looking directly at the camera with a calm neutral expression, soft natural makeup, bare shoulders and upper chest, soft even studio lighting, plain light gray seamless background, high detail skin texture, sharp focus on the eyes, professional beauty photography, 85mm lens, shallow depth of field' : req.body?.prompt || '';
   const ratio = headshot ? '3:4' : req.body?.ratio || '1:1';
 
   if (!prompt || prompt.trim().length < 1) {
