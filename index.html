@@ -814,7 +814,29 @@
   </div>
 </div>
 
+<style>
+  #content-safety-dialog { margin: auto; width: min(470px, calc(100vw - 36px)); padding: 22px; border: 1px solid #4c3b59; border-radius: 22px; background: #211b28; color: #ded1e8; box-shadow: 0 24px 70px #0008; }
+  #content-safety-dialog::backdrop { background: #08060ca8; backdrop-filter: blur(2px); }
+  #content-safety-dialog .safety-message { display: flex; align-items: flex-start; gap: 14px; }
+  #content-safety-dialog .safety-icon { width: 40px; height: 40px; flex-shrink: 0; display: grid; place-items: center; border-radius: 12px; background: #33263f; color: #c49ae8; }
+  #content-safety-dialog .safety-icon svg { width: 24px; height: 24px; }
+  #content-safety-dialog p { margin: 0; font-size: 14px; line-height: 1.6; }
+  #content-safety-dialog form { display: flex; align-items: center; justify-content: space-between; gap: 14px; margin: 20px 0 0; }
+  #content-safety-dialog .safety-refund { color: #bdaacb; font-size: 12px; line-height: 1.5; }
+  #content-safety-dialog button { min-width: 66px; flex-shrink: 0; border: 1px solid #b789dc; border-radius: 20px; padding: 10px 20px; background: linear-gradient(180deg,#ad78dc,#8b54c4); color: #fff; font: inherit; font-size: 13px; cursor: pointer; }
+</style>
+<dialog id="content-safety-dialog" aria-label="Generation blocked" aria-describedby="safety-message-text safety-refund-text">
+  <div class="safety-message"><div class="safety-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3 4 6v6c0 5 8 9 8 9s8-4 8-9V6l-8-3Z"/><path d="M12 8v5m0 3v.01"/></svg></div><p id="safety-message-text">This generation was blocked by the content safety check. Please try a different reference image or video.</p></div>
+  <form method="dialog"><span class="safety-refund" id="safety-refund-text"></span><button autofocus>OK</button></form>
+</dialog>
 <script>
+function showGenerationError(error) {
+  if (error.errorCode !== 'CONTENT_FLAGGED') { alert('Error: ' + error.message); return; }
+  document.getElementById('safety-refund-text').textContent = error.creditsRestored
+    ? "Don't worry, your credits were returned."
+    : 'Please refresh to check your credit balance.';
+  document.getElementById('content-safety-dialog').showModal();
+}
 const BACKEND   = 'https://imagine-production-5857.up.railway.app';
 const STRIPE_PK = 'pk_live_51Tf4dKIsq224AzhGRQDalZSWfHL0T7HdxL1ZNTLQHFjSG6jCRuuGKyWsgNlNjXiNhy9tzqykMNqwbFJoYhEaQXRz00bQp2gLlP';
 
@@ -1226,7 +1248,10 @@ async function handleGenerateVideo() {
       }
       if (job.status === 'failed') {
         if (job.refundToken) { setToken(job.refundToken); updateCreditUI(job.credits); }
-        throw new Error(job.error || 'Generation failed — your credits were returned.');
+        throw Object.assign(new Error(job.error || 'Generation failed.'), {
+          errorCode: job.errorCode,
+          creditsRestored: job.creditsRestored === true && !!job.refundToken && getToken() === job.refundToken,
+        });
       }
       const secs = Math.round((Date.now() - started) / 1000);
       if (job.status === 'uploading' || job.status === 'created') {
@@ -1244,7 +1269,7 @@ async function handleGenerateVideo() {
     if (grid.children.length === 0) {
       showEmpty();
     }
-    alert('Error: ' + err.message);
+    showGenerationError(err);
 
   } finally {
     btn.disabled = false;
@@ -1310,7 +1335,11 @@ async function handleGenerateImage() {
       result = await response.json();
     }
     if (result.status === 'failed') localStorage.removeItem(key);
-    if (result.error) throw new Error(result.error);
+    if (result.error) {
+      const restored = result.creditsRestored === true && getToken() === token;
+      if (restored) updateCreditUI(result.credits);
+      throw Object.assign(new Error(result.error), { errorCode: result.errorCode, creditsRestored: restored });
+    }
     if (!result.newToken || !result.imageUrl) throw new Error('Image still processing. Try again to check your result.');
     const { imageUrl, newToken, credits } = result;
     if (getToken() === token) {
@@ -1327,7 +1356,7 @@ async function handleGenerateImage() {
     if (grid.children.length === 0) {
       showEmpty();
     }
-    alert('Error: ' + err.message);
+    showGenerationError(err);
 
   } finally {
     btn.disabled = false;

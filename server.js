@@ -42,6 +42,21 @@ const PACKS = {
 
 const usedJtis = new Set();
 
+function generationError(source) {
+  const data = source?.response?.data || source;
+  const detail = data?.data || data;
+  const message = [detail?.error, detail?.message, data?.message, source?.message]
+    .map(value => typeof value === 'string' ? value : value?.message || '').join(' ');
+  const flagged = source?.errorCode === 'CONTENT_FLAGGED' ||
+    [detail?.code, data?.code, detail?.error?.code].some(code => String(code) === '1200') ||
+    /potentially sensitive|content.{0,30}(?:flagged|moderation|safety|policy)|nsfw|safety.{0,20}(?:check|filter|block)/i.test(message);
+  const error = new Error(flagged
+    ? 'This generation was blocked by the content safety check. Please try a different reference image or video.'
+    : 'Generation could not be completed. Please try again later.');
+  error.errorCode = flagged ? 'CONTENT_FLAGGED' : 'GENERATION_FAILED';
+  return error;
+}
+
 function issueToken(credits) {
   const jti = crypto.randomUUID();
   const token = jwt.sign({ credits, jti }, process.env.JWT_SECRET, { expiresIn: '365d' });
@@ -245,7 +260,7 @@ app.post('/generate', upload.any(), async (req, res) => {
         imageUrl = pollRes.data?.data?.outputs?.[0];
         break;
       }
-      if (status === 'failed') throw new Error('Generation failed on WaveSpeed');
+      if (['failed', 'cancelled', 'timeout', 'deleted'].includes(status)) throw generationError(pollRes.data);
     }
 
     if (!imageUrl) throw new Error('Image generation timed out');
@@ -259,9 +274,12 @@ app.post('/generate', upload.any(), async (req, res) => {
   } catch (err) {
     console.error('Generation error:', err.message);
     usedJtis.delete(payload.jti);
-    const error = 'Image generation failed: ' + err.message;
-    if (job) job.result = { status: 'failed', error };
-    else res.status(500).json({ error });
+    const failure = generationError(err);
+    // Image credits are deducted only on success; release the original token.
+    const result = { status: 'failed', error: failure.message, errorCode: failure.errorCode,
+      creditsRestored: true, credits: payload.credits };
+    if (job) job.result = result;
+    else res.status(500).json(result);
   }
 });
 
@@ -299,15 +317,18 @@ function verifyAndConsumeFor(authHeader, cost) {
 }
 
 
-function failVideoJob(jobId, message) {
+function failVideoJob(jobId, failure) {
   const job = videoJobs.get(jobId);
-  if (!job || job.status === 'completed') return;
-  console.error(`Video job ${jobId} failed:`, message);
+  if (!job || job.status === 'completed' || job.status === 'failed') return;
+  const error = generationError(failure);
+  console.error(`Video job ${jobId} failed:`, error.message);
   job.status = 'failed';
-  job.error = message;
+  job.error = error.message;
+  job.errorCode = error.errorCode;
   // Refund: burn the deducted token, mint one with the credits put back.
   usedJtis.add(job.newJti);
   job.refundToken = issueToken(job.creditsAfter + job.cost).token;
+  job.creditsRestored = true;
 }
 
 async function runVideoJob(jobId, files) {
@@ -364,6 +385,7 @@ async function runVideoJob(jobId, files) {
         { headers: { 'Authorization': `Bearer ${process.env.WAVESPEED_API_KEY}` } }
       );
     } catch (err) {
+      if (generationError(err).errorCode === 'CONTENT_FLAGGED') throw generationError(err);
       // A blip while polling shouldn't throw away a generation we've paid for.
       console.warn(`Video job ${job.id} poll error at ${i * 3}s: ${err.message}`);
       continue;
@@ -380,7 +402,7 @@ async function runVideoJob(jobId, files) {
       return;
     }
     if (['failed', 'cancelled', 'timeout', 'deleted'].includes(status)) {
-      throw new Error(`Generation ${status} on WaveSpeed`);
+      throw generationError(pollRes.data);
     }
   }
   throw new Error(`Still generating after 20 minutes. Recover it with prediction ${predictionId}`);
@@ -458,7 +480,7 @@ Maintain perfect temporal consistency across the entire video. No identity drift
   // Hand the client its jobId and deducted token now; work continues after.
   res.json({ jobId, newToken, credits: creditsAfter, cost });
 
-  runVideoJob(jobId, req.files).catch(err => failVideoJob(jobId, err.message));
+  runVideoJob(jobId, req.files).catch(err => failVideoJob(jobId, err));
 });
 
 app.get('/video-job/:id', (req, res) => {
@@ -469,6 +491,8 @@ app.get('/video-job/:id', (req, res) => {
     status: job.status,
     videoUrl: job.videoUrl,
     error: job.error,
+    errorCode: job.errorCode || null,
+    creditsRestored: job.creditsRestored === true,
     predictionId: job.predictionId || null,
     refundToken: job.refundToken,
     credits: job.status === 'failed' ? job.creditsAfter + job.cost : job.creditsAfter,
