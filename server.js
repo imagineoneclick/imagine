@@ -404,7 +404,19 @@ app.post('/generate-video', videoUpload.any(), async (req, res) => {
       return res.status(400).json({ error: 'Add one image and one video to generate.' });
     }
   }
-  const prompt = usePreset ? 'Replace the woman in Video 1 with the woman from Image 1. Image 1 defines the complete identity face, body and hair. Preserve every motion, action, camera move, outfit, lighting and background from Video 1 exactly. Remove all her tattoos and Remove all text' : (req.body?.prompt || '').trim();
+  const prompt = usePreset ? `Replace the woman in Video 1 with the exact woman from Image 1.
+Image 1 is the sole and complete source of identity:
+- Face, facial features, skin tone, and style
+- Hair (style, length, color, texture)
+- Body shape, proportions, height, build, and physical details
+
+Strictly preserve from Video 1 with zero changes:
+- Every motion, gesture, pose, expressions and action frame-by-frame
+- Camera movement, framing, and angles
+- Outfit, clothing details, and accessories
+- Lighting, shadows, and color grading
+- Background, environment, and all other elements
+Maintain perfect temporal consistency across the entire video. No identity drift, no morphing, no artifacts. The final result must look like the original Video 1 performance, but performed by the woman from Image 1.` : (req.body?.prompt || '').trim();
   const aspect     = req.body?.aspect_ratio || '16:9';
   const resolution = ['480p', '720p', '1080p'].includes(req.body?.resolution) ? req.body.resolution : '720p';
 
