@@ -6,6 +6,7 @@ const jwt     = require('jsonwebtoken');
 const crypto  = require('crypto');
 const axios   = require('axios');
 const multer  = require('multer');
+const { referenceDuration } = require('./video-duration');
 const { v2: cloudinary } = require('cloudinary');
 
 const app    = express();
@@ -385,6 +386,15 @@ async function runVideoJob(jobId, files) {
   throw new Error(`Still generating after 20 minutes. Recover it with prediction ${predictionId}`);
 }
 
+app.post('/video-quote', videoUpload.single('video'), async (req, res) => {
+  try {
+    const measured = await referenceDuration(req.file);
+    res.json({ ...measured, costs: Object.fromEntries(
+      Object.keys(VIDEO_CREDITS_PER_SECOND).map(q => [q, videoCost(q, measured.duration)])
+    ) });
+  } catch (error) { res.status(400).json({ error: error.message }); }
+});
+
 app.post('/generate-video', videoUpload.any(), async (req, res) => {
   const usePreset = req.body?.preset === 'reference-swap';
   if (usePreset) {
@@ -398,11 +408,17 @@ app.post('/generate-video', videoUpload.any(), async (req, res) => {
   const aspect     = req.body?.aspect_ratio || '16:9';
   const resolution = ['480p', '720p', '1080p'].includes(req.body?.resolution) ? req.body.resolution : '720p';
 
-  // The UI offers 4–15s; clamp anything else into Wan 3.0's valid range.
-  let duration = parseInt(req.body?.duration, 10) || 5;
-  duration = Math.min(15, Math.max(2, duration));
+  // Measure the uploaded file; client-supplied seconds never determine billing.
+  const videoFiles = (req.files || []).filter(f => f.fieldname.startsWith('vid_'));
+  if (videoFiles.length !== 1) return res.status(400).json({ error: 'Add exactly one reference video.' });
+  let duration;
+  try { ({ duration } = await referenceDuration(videoFiles[0])); }
+  catch (error) { return res.status(400).json({ error: error.message }); }
 
   const cost = videoCost(resolution, duration);
+  if (Number(req.body?.duration) !== duration || Number(req.body?.expected_cost) !== cost) {
+    return res.status(409).json({ error: 'Video length or cost changed. Refresh the page and add your reference again.', duration, cost });
+  }
 
   let payload;
   try { payload = verifyAndConsumeFor(req.headers.authorization, cost); }

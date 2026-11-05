@@ -737,9 +737,8 @@
     <section class="prompt-panel" aria-label="Prompt and settings">
       <div class="settings-row" id="vid-settings">
         <label>Size<select id="video-ratio"><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option></select></label>
-        <label>Length<select id="video-duration" aria-describedby="duration-help"><option value="1" disabled>1 second — unavailable</option><option value="2">2 seconds</option><option value="3">3 seconds</option><option value="4">4 seconds</option><option value="5" selected>5 seconds</option><option value="6">6 seconds</option><option value="7">7 seconds</option><option value="8">8 seconds</option><option value="9">9 seconds</option><option value="10">10 seconds</option><option value="11">11 seconds</option><option value="12">12 seconds</option><option value="13">13 seconds</option><option value="14">14 seconds</option><option value="15">15 seconds</option></select></label>
         <label>Quality<select id="video-resolution"><option>480p</option><option selected>720p</option><option>1080p</option></select></label>
-        <span class="sr-only" id="duration-help">Video generation supports 2 to 15 seconds.</span>
+        <span id="duration-help" style="color:var(--muted);font-size:12px" aria-live="polite">Video length follows your reference (2–15s).</span>
       </div>
       <div class="generation-actions"><span class="composer-hint"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg> Bring your idea to life</span><div class="generate-group"><div class="gen-cost" id="gen-cost" aria-live="polite">Cost: <b>5 credits</b></div><button class="btn-generate" id="gen-btn" onclick="handleGenerate()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg><span id="gen-btn-label">Generate</span></button></div></div>
     </section>
@@ -951,7 +950,7 @@ function loadSavedGenerations() {
 
 let mode = 'video';
 let videoRefs = [];                       // { file, url, kind, issue }
-let vidDuration = 5, vidRatio = '16:9', vidRes = '720p';
+let vidDuration = 0, vidRatio = '16:9', vidRes = '720p';
 
 const VIDEO_CREDITS_PER_SECOND = { '480p': 0.5, '720p': 1, '1080p': 2 };
 
@@ -1007,18 +1006,19 @@ function setMode(next) {
 
 function updateGenCost() {
   const c = mode === 'video' ? videoCost() : 1;
+  if (mode === 'video' && !vidDuration) {
+    document.getElementById('gen-cost').textContent = 'Cost: add reference video';
+    return;
+  }
   document.getElementById('gen-cost').innerHTML =
     `Cost: <b>${c} ${c === 1 ? 'credit' : 'credits'}</b>`;
 }
 
 function buildVideoSettings() {
-  const duration = document.getElementById('video-duration');
   const ratio = document.getElementById('video-ratio');
   const resolution = document.getElementById('video-resolution');
-  duration.value = String(vidDuration);
   ratio.value = vidRatio;
   resolution.value = vidRes;
-  duration.addEventListener('change', () => { vidDuration = Number(duration.value); updateGenCost(); });
   ratio.addEventListener('change', () => { vidRatio = ratio.value; });
   resolution.addEventListener('change', () => { vidRes = resolution.value; updateGenCost(); });
 }
@@ -1038,19 +1038,24 @@ function addVideoRefs(e, kind) {
   e.target.value = '';
 }
 
-function probeVideoRef(ref) {
-  const el = document.createElement('video');
-  el.preload = 'metadata';
-  el.onloadedmetadata = () => {
-    ref.seconds = el.duration;
-    if (!ref.issue) {
-      if (el.duration < 1)  ref.issue = 'shorter than 1s — Wan needs 1–15s';
-      if (el.duration > 15) ref.issue = 'longer than 15s — trim it first';
-    }
-    renderVideoThumbs();
-  };
-  el.onerror = () => { ref.issue = 'could not be read — try MP4 or MOV'; renderVideoThumbs(); };
-  el.src = ref.url;
+async function probeVideoRef(ref) {
+  ref.checking = true;
+  renderVideoThumbs();
+  try {
+    if (ref.issue) return;
+    const form = new FormData();
+    form.append('video', ref.file);
+    const response = await fetch(BACKEND + '/video-quote', { method: 'POST', body: form });
+    const data = await response.json();
+    if (!response.ok || data.error) throw new Error(data.error || 'Could not check video length.');
+    ref.seconds = data.seconds;
+    ref.duration = data.duration;
+  } catch (error) {
+    ref.issue = error.message || 'Could not check video length. Please add it again.';
+  } finally {
+    ref.checking = false;
+    if (videoRefs.includes(ref)) renderVideoThumbs();
+  }
 }
 
 function removeVideoRef(idx) {
@@ -1066,6 +1071,14 @@ function labelFor(ref) {
 }
 
 function renderVideoThumbs() {
+  const video = videoRefs.find(r => r.kind === 'video');
+  vidDuration = video && !video.issue && !video.checking ? (video.duration || 0) : 0;
+  document.getElementById('duration-help').textContent = video?.checking
+    ? 'Checking reference length…'
+    : vidDuration ? 'Video length: ' + vidDuration + ' seconds · matches reference' +
+      (video.seconds !== vidDuration ? ' (rounded up)' : '')
+    : 'Video length follows your reference (2–15s).';
+  updateGenCost();
   document.getElementById('vid-ref-count').textContent =
     `${videoRefs.length} of 2 added`;
 
@@ -1111,6 +1124,7 @@ async function handleGenerateVideo() {
   const blocked = videoRefs.find(r => r.issue);
   if (blocked) { alert(`${labelFor(blocked)} — ${blocked.issue}`); return; }
 
+  if (!vidDuration) { alert('Wait for the reference video length to finish checking.'); return; }
   const token = getToken();
   if (!token) { openModal(); return; }
 
@@ -1156,6 +1170,7 @@ async function handleGenerateVideo() {
     const fd = new FormData();
     fd.append('preset', 'reference-swap');
     fd.append('duration', vidDuration);
+    fd.append('expected_cost', videoCost());
     fd.append('aspect_ratio', vidRatio);
     fd.append('resolution', vidRes);
     const n = { image: 0, video: 0, audio: 0 };
