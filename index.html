@@ -556,7 +556,6 @@
     .settings-row { display: flex; flex-wrap: wrap; gap: 14px; padding-top: 12px; border-top: 1px solid #3a2e46; }
     .settings-row label { display: flex; flex-direction: column; align-items: flex-start; gap: 5px; color: #b6a9c3; font-size: 12px; }
     .settings-row select { max-width: 100%; padding: 9px 12px; border: 1px solid #483850; border-radius: 13px; background: #19151f; color: #eee5f5; color-scheme: dark; font: inherit; font-size: 13px; }
-    #video-duration { width: 116px; }
     .generation-actions { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 14px; margin-top: 16px; }
     .composer-hint { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #a591b8; }
     .composer-hint svg { width: 14px; height: 14px; }
@@ -601,8 +600,11 @@
     .pack.best-value:hover { background: rgba(202,157,68,.08); border-color: #e6c477; }
     .modal { max-height: calc(100dvh - 32px); overflow-y: auto; }
     .creation-panel .prompt-panel { margin-top: 16px; padding: 0; border: 0; background: transparent; }
-    #vid-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 112px)); justify-content: center; gap: clamp(6px, 2vw, 14px); padding-top: 16px; }
+    #vid-settings { display: grid; grid-template-columns: repeat(3, minmax(0, 140px)); justify-content: center; gap: clamp(8px, 2vw, 18px); padding-top: 24px; }
     #vid-settings label, #vid-settings select { width: 100%; min-width: 0; }
+    #vid-settings label, #vid-settings .reference-length { display: flex; flex-direction: column; gap: 12px; color: #b6a9c3; font-size: 13px; }
+    #vid-settings select { height: 45px; border-radius: 16px; font-size: 14px; }
+    #vid-settings output { display: flex; align-items: center; height: 45px; padding-left: 15px; color: #eee5f5; font-size: 14px; font-variant-numeric: tabular-nums; }
     .creation-panel .composer-hint { display: none; }
     .creation-panel .generate-group { margin-inline: auto; }
     
@@ -737,8 +739,8 @@
     <section class="prompt-panel" aria-label="Prompt and settings">
       <div class="settings-row" id="vid-settings">
         <label>Size<select id="video-ratio"><option value="16:9">16:9</option><option value="9:16">9:16</option><option value="1:1">1:1</option><option value="4:3">4:3</option><option value="3:4">3:4</option></select></label>
+        <div class="reference-length"><span id="reference-length-label">Length</span><output id="duration-help" aria-labelledby="reference-length-label" aria-describedby="reference-length-note" aria-live="polite">—</output><span class="sr-only" id="reference-length-note">Automatically matches your reference video, rounded up to a whole second.</span></div>
         <label>Quality<select id="video-resolution"><option>480p</option><option selected>720p</option><option>1080p</option></select></label>
-        <span id="duration-help" style="color:var(--muted);font-size:12px" aria-live="polite">Video length follows your reference (2–15s).</span>
       </div>
       <div class="generation-actions"><span class="composer-hint"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg> Bring your idea to life</span><div class="generate-group"><div class="gen-cost" id="gen-cost" aria-live="polite">Cost: <b>5 credits</b></div><button class="btn-generate" id="gen-btn" onclick="handleGenerate()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12 3 2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5L12 3Z"/></svg><span id="gen-btn-label">Generate</span></button></div></div>
     </section>
@@ -1074,10 +1076,8 @@ function renderVideoThumbs() {
   const video = videoRefs.find(r => r.kind === 'video');
   vidDuration = video && !video.issue && !video.checking ? (video.duration || 0) : 0;
   document.getElementById('duration-help').textContent = video?.checking
-    ? 'Checking reference length…'
-    : vidDuration ? 'Video length: ' + vidDuration + ' seconds · matches reference' +
-      (video.seconds !== vidDuration ? ' (rounded up)' : '')
-    : 'Video length follows your reference (2–15s).';
+    ? 'Checking…'
+    : vidDuration ? vidDuration + ' seconds' : '—';
   updateGenCost();
   document.getElementById('vid-ref-count').textContent =
     `${videoRefs.length} of 2 added`;
