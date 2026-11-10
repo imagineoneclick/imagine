@@ -84,6 +84,11 @@ app.get('/credits', (req, res) => {
 });
 
 app.post('/create-checkout', async (req, res) => {
+  // Temporary purchase-only pause. Remove this guard after the owner tops up.
+  return res.status(503).json({
+    error: 'Credit purchases are temporarily paused. We expect to reopen within 24 hours.',
+    code: 'PURCHASES_PAUSED'
+  });
   const { pack } = req.body;
   const packData = PACKS[pack];
   if (!packData) return res.status(400).json({ error: 'Invalid pack.' });
