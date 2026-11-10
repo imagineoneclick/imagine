@@ -360,15 +360,6 @@
 
     .modal-title { font-size: 1.4rem; font-weight: 600; }
     .modal-title span { color: var(--purple-bright); }
-    #overlay [hidden] { display: none !important; }
-    .purchase-pause-row { display:flex; align-items:flex-start; gap:16px; }
-    .purchase-pause-icon { flex:0 0 44px; height:44px; display:grid; place-items:center; border-radius:14px; background:#36273f; color:#d0a2f1; font-size:24px; }
-    .purchase-pause-row h4 { font-size:20px; font-weight:500; line-height:1.4; margin:0 0 9px; }
-    .purchase-pause-row p, .purchase-pause-return { font-size:14px; line-height:1.6; color:#bcb2c5; }
-    .purchase-pause-return { margin:24px 0 0 60px; }
-    .purchase-pause-footer { display:flex; justify-content:flex-end; margin-top:26px; }
-    .purchase-pause-footer button { background:linear-gradient(180deg,#af78dc,#8e55c4); color:white; border:1px solid #bb8be2; border-radius:23px; padding:10px 27px; font:inherit; cursor:pointer; min-height:44px; }
-    @media(max-width:440px) { .purchase-pause-row { gap:12px; } .purchase-pause-row h4 { font-size:18px; } .purchase-pause-return { margin-left:56px; } }
 
     .modal-close {
       background: none; border: none; cursor: pointer;
@@ -787,15 +778,7 @@
       <h3 class="modal-title">Buy <span>Credits</span></h3>
       <button class="modal-close" onclick="closeModal()">✕</button>
     </div>
-    <div class="purchase-pause-message">
-      <div class="purchase-pause-row">
-        <span class="purchase-pause-icon" aria-hidden="true">Ⅱ</span>
-        <div><h4>Credit purchases are temporarily paused.</h4><p>Your existing credits are safe and will not expire.</p></div>
-      </div>
-      <p class="purchase-pause-return">We expect to reopen within 24 hours.<br>Thanks for your patience.</p>
-      <div class="purchase-pause-footer"><button type="button" onclick="closeModal()">Got it</button></div>
-    </div>
-    <div class="packs" hidden>
+    <div class="packs">
       <div class="pack" onclick="buyPack('starter')">
         <div class="pack-info">
           <div class="pack-name"><b>5</b> credits</div>
@@ -827,7 +810,7 @@
       <div class="pack-price">$49.99</div>
     </div>
     </div>
-    <p class="modal-note" hidden>Prices in USD · Secured by Stripe<br>Credits never expire · Stored in your browser</p>
+    <p class="modal-note">Prices in USD · Secured by Stripe<br>Credits never expire · Stored in your browser</p>
   </div>
 </div>
 
@@ -919,8 +902,6 @@ function closeModal() { document.getElementById('overlay').classList.remove('ope
 function overlayClick(e) { if (e.target === document.getElementById('overlay')) closeModal(); }
 
 async function buyPack(packId) {
-  openModal();
-  return; // Temporary purchase pause; generation and existing balances are unchanged.
   document.querySelectorAll('.pack').forEach(p => p.style.pointerEvents = 'none');
   try {
     const r = await fetch(`${BACKEND}/create-checkout`, {
