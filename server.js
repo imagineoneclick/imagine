@@ -84,6 +84,11 @@ app.get('/credits', (req, res) => {
 });
 
 app.post('/create-checkout', async (req, res) => {
+  // Temporary purchase-only pause; generation and paid-payment confirmation stay available.
+  return res.status(503).json({
+    error: 'Credit purchases are temporarily paused. We expect to reopen within 24 hours.',
+    code: 'PURCHASES_PAUSED'
+  });
   const { pack } = req.body;
   const packData = PACKS[pack];
   if (!packData) return res.status(400).json({ error: 'Invalid pack.' });
@@ -558,6 +563,11 @@ app.post('/webhook', (req, res) => {
 });
 // Create NOWPayments crypto payment
 app.post('/create-crypto-payment', async (req, res) => {
+  // Temporary purchase-only pause; generation and paid-payment confirmation stay available.
+  return res.status(503).json({
+    error: 'Credit purchases are temporarily paused. We expect to reopen within 24 hours.',
+    code: 'PURCHASES_PAUSED'
+  });
   const { pack } = req.body;
   const packages = {
     starter:  { credits: 5,  amount: 4.99,  name: '5 Credits' },
