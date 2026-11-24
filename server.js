@@ -26,14 +26,6 @@ app.use(cors({
     'https://sage-hummingbird-722846.netlify.app'
   ] 
 }));
-
-// Owner-controlled generation pause: reject before uploads, credit consumption or provider calls.
-app.use((req, res, next) => {
-  if (req.method === 'POST' && ['/generate', '/generate-video'].includes(req.path.replace(/\/$/, ''))) {
-    return res.status(503).json({ error: 'Generation is temporarily unavailable. We expect service to resume within 24 hours. Your existing credits are safe.', code: 'GENERATION_PAUSED' });
-  }
-  next();
-});
 app.use('/webhook', express.raw({ type: 'application/json' }));
 app.use(express.json());
 
